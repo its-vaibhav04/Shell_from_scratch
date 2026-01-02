@@ -29,8 +29,8 @@ int main(int argc, char *argv[]) {
     }else if(strncmp(input, "type ", 5) == 0){
           int found = 0;
 
-          for (int i = 0; i < 4; i++) {
-              if (strcmp(builtin[i], input) == 0) {
+          for (int i = 0; i < 3; i++) {
+              if (strcmp(builtin[i], input+5) == 0) {
                   found = 1;
                   break;
               }
