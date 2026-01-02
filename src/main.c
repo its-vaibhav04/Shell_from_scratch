@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
     //strcspn(x,y) -> Read string x until any character from y matches (return the index of match)
     //command[index] = '\0' -> Replacing next line char with null terminator
     input[strcspn(input,"\n")] = '\0';
-    printf("%s: command not found",input);
+    printf("%s: command not found\n",input);
   }
 
   return 0;
