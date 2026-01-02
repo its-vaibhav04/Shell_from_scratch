@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
           if (found){
               printf("%s is a shell builtin\n",input+5);
           }else{
-              bool *executable = false;
+              bool executable = false;
               char *path = getenv("PATH");
               char *target = input+5;
 
