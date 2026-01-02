@@ -43,13 +43,13 @@ int main(int argc, char *argv[]) {
           if (found){
               printf("%s is a shell builtin\n",input+5);
           }else{
-              bool executable = false;
-              char path = getenv("PATH");
-              char target = input+5;
+              bool *executable = false;
+              char *path = getenv("PATH");
+              char *target = input+5;
 
               if(path){
-                char path_copy = strdup(path);
-                char token = strtok(path_copy,";");
+                char *path_copy = strdup(path);
+                char *token = strtok(path_copy,";");
 
                 while(token){
                   DIR *dir = opendir(token);
