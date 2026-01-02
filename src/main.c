@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
 
               if(path){
                 char *path_copy = strdup(path);
-                char *token = strtok(path_copy,";");
+                char *token = strtok(path_copy,":");
 
                 while(token){
                   DIR *dir = opendir(token);
