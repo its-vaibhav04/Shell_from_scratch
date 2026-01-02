@@ -23,9 +23,11 @@ int main(int argc, char *argv[]) {
     //Exit Clause
     if(strcmp(input,"exit")==0) break;
 
-    if(strncmp(input, "echo", 5) == 0){
+    if(strncmp(input, "echo ", 5) == 0){
       printf("%s\n",input+5);
-    }else printf("%s: command not found\n",input);
+    }else{
+      printf("%s: command not found\n",input);
+    }
   }
 
   return 0;
