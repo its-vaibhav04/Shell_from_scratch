@@ -16,13 +16,16 @@ int main(int argc, char *argv[]) {
     fgets(input,100,stdin);
     //Can do scanf() as well
 
-    // TODO: Uncomment the code below to pass the first stage
-
     //strcspn(x,y) -> Read string x until any character from y matches (return the index of match)
     //command[index] = '\0' -> Replacing next line char with null terminator
     input[strcspn(input,"\n")] = '\0';
+
+    //Exit Clause
     if(strcmp(input,"exit")==0) break;
-    printf("%s: command not found\n",input);
+
+    if(strncmp(input, "echo", 5) == 0){
+      printf("%s\n",input+5);
+    }else printf("%s: command not found\n",input);
   }
 
   return 0;
