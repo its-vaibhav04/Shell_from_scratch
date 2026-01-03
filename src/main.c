@@ -11,52 +11,45 @@
 // Tokenizes input into argv array, returns argc
 int tokenize(char* input, char* argv[], int max_args)
 {
+  if (!input)
+    return 0;
+
   int argc = 0;
   char* p = input;
+  char* w = input;
 
-  while (*p)
-  {
-    // Skip leading spaces
-    while (*p == ' ')
+  while (*p) {
+    while (*p == ' ' || *p == '\t')
       p++;
-
     if (*p == '\0')
       break;
-
     if (argc >= max_args - 1)
       break;
 
-    // Start of a token
-    argv[argc++] = p;
+    argv[argc++] = w;
 
-    if (*p == '\'')
-    {
-      p++;                // skip opening quote
-      argv[argc - 1] = p; // token starts after quote
-
-      while (*p && *p != '\'')
+    while (*p && *p != ' ' && *p != '\t') {
+      if (*p == '\'') {
         p++;
-
-      if (*p == '\'')
-      {
-        *p = '\0'; // terminate token
-        p++;       // skip closing quote
+        while (*p && *p != '\'') {
+          *w++ = *p++;
+        }
+        if (*p == '\'')
+          p++;
+      }
+      else {
+        *w++ = *p++;
       }
     }
-    else
-    {
-      // Normal token
-      while (*p && *p != ' ')
-        p++;
-
-      if (*p)
-      {
-        *p = '\0';
-        p++;
-      }
-    }
+    if (*p)
+      p++;
+    *w++ = '\0';
+    // char* token = strtok(input, " \t");
+    // while(token && argc < max_args - 1){
+    //   argv[argc++] = token;
+    //   token = strtok(NULL, " \t");
+    // }
   }
-
   argv[argc] = NULL;
   return argc;
 }
