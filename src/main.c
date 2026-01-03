@@ -61,10 +61,8 @@ char *find_executable(const char *command)
 }
 
 // Executes external commands
-void execute_external(char *input)
+void execute_external(char *argv[])
 {
-  char *argv[20];
-  tokenize(input, argv, 20);
 
   char *exe_path = find_executable(argv[0]);
   if (!exe_path)
@@ -115,22 +113,38 @@ int main(int argc, char *argv[])
     // command[index] = '\0' -> Replacing next line char with null terminator
     input[strcspn(input, "\n")] = '\0';
 
+    char *argvv[20];
+    char input_copy[100];
+
+    strcpy(input_copy, input);
+    int argc = tokenize(input_copy, argvv, 20);
+
+    if (argc == 0)
+      continue;
+
     // EXIT COMMAND
-    if (strcmp(input, "exit") == 0)
+    if (argc == 1 && strcmp(argvv[0], "exit") == 0)
       break;
 
     // ECHO COMMAND
-    if (strncmp(input, "echo ", 5) == 0)
+    if (strcmp(argvv[0], "echo") == 0)
     {
-      printf("%s\n", input + 5);
+      for (int i = 1; i < argc; i++)
+      {
+        printf("%s", argvv[i]);
+        if (i < argc - 1)
+          printf(" ");
+      }
+      printf("\n");
     }
-    else if (strncmp(input, "type ", 5) == 0)
+    else if (argc >= 2 && strcmp(argvv[0], "type") == 0)
     { // TYPE COMMAND
+      const char *cmd = argvv[1];
       int found = 0;
 
       for (int i = 0; i < 3; i++)
       { // Checks command for each builtin
-        if (strcmp(builtin[i], input + 5) == 0)
+        if (strcmp(builtin[i], cmd) == 0)
         {
           found = 1;
           break;
@@ -138,25 +152,33 @@ int main(int argc, char *argv[])
       }
       if (found)
       {
-        printf("%s is a shell builtin\n", input + 5);
+        printf("%s is a shell builtin\n", cmd);
       }
       else
       {
-        char *exe_path = find_executable(input + 5);
+        char *exe_path = find_executable(cmd);
         if (exe_path)
         {
-          printf("%s is %s\n", input + 5, exe_path);
+          printf("%s is %s\n", cmd, exe_path);
           free(exe_path);
         }
         else
         {
-          printf("%s: not found\n", input + 5);
+          printf("%s: not found\n", cmd);
         }
+      }
+    }
+    else if (strcmp(argvv[0], "pwd") == 0)
+    {
+      char cwd[1024];
+      if (getcwd(cwd, sizeof(cwd)) != NULL)
+      {
+        printf("%s\n", cwd);
       }
     }
     else
     {
-      execute_external(input);
+      execute_external(argvv);
     }
   }
   return 0;
