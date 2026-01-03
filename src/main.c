@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
 
   // REPL - Read Evaluate Print Loop
   char input[100]; // declaring a char array to store input command of user
-  char builtin[3][10] = {"echo", "exit", "type"};
+  char builtin[4][10] = {"echo", "exit", "type", "pwd"};
   while (1)
   {
 
@@ -141,8 +141,9 @@ int main(int argc, char *argv[])
     { // TYPE COMMAND
       const char *cmd = argvv[1];
       int found = 0;
+      int builtin_count = sizeof(builtin) / sizeof(builtin[0]);
 
-      for (int i = 0; i < 3; i++)
+      for (int i = 0; i < builtin_count; i++)
       { // Checks command for each builtin
         if (strcmp(builtin[i], cmd) == 0)
         {
