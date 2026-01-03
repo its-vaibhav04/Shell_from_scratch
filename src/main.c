@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
       }
       if (found)
       {
-        printf("%s is a builtin command\n", input + 5);
+        printf("%s is a shell builtin\n", input + 5);
       }
       else
       {
