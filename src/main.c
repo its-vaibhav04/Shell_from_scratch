@@ -150,7 +150,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-          printf("%s: command not found\n", input + 5);
+          printf("%s: not found\n", input + 5);
         }
       }
     }
