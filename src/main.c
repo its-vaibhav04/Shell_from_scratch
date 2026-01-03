@@ -180,15 +180,39 @@ int main(int argc, char *argv[])
     }
     else if (strcmp(argvv[0], "cd") == 0)
     {
-      if (chdir(argvv[1]) != 0)
+      const char *path = NULL;
+
+      if (argc == 1)
       {
-        fprintf(stderr, "cd: %s: %s\n", argvv[1], strerror(errno));
+        path = getenv("HOME");
+        if (!path)
+        {
+          fprintf(stderr, "cd: HOME not set\n");
+          continue;
+        }
       }
+      else if (argc == 2 && strcmp(argvv[1], "~") == 0)
+      {
+        path = getenv("HOME");
+        if (!path)
+        {
+          fprintf(stderr, "cd: HOME not set\n");
+          continue;
+        }
+      }
+      else if (argc == 2)
+        path = argvv[1];
+      else
+      {
+        fprintf(stderr, "cd: too many arguments\n");
+        continue;
+      }
+
+      if (chdir(path) != 0)
+        fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
     }
     else
-    {
       execute_external(argvv);
-    }
   }
   return 0;
 }
