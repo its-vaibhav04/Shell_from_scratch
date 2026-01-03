@@ -9,36 +9,74 @@
 #include <errno.h>
 
 // Tokenizes input into argv array, returns argc
-int tokenize(char *input, char *argv[], int max_args)
+int tokenize(char* input, char* argv[], int max_args)
 {
   int argc = 0;
-  char *token = strtok(input, " ");
+  char* p = input;
 
-  while (token && argc < max_args - 1)
+  while (*p)
   {
-    argv[argc++] = token;
-    token = strtok(NULL, " ");
+    // Skip leading spaces
+    while (*p == ' ')
+      p++;
+
+    if (*p == '\0')
+      break;
+
+    if (argc >= max_args - 1)
+      break;
+
+    // Start of a token
+    argv[argc++] = p;
+
+    if (*p == '\'')
+    {
+      p++;                // skip opening quote
+      argv[argc - 1] = p; // token starts after quote
+
+      while (*p && *p != '\'')
+        p++;
+
+      if (*p == '\'')
+      {
+        *p = '\0'; // terminate token
+        p++;       // skip closing quote
+      }
+    }
+    else
+    {
+      // Normal token
+      while (*p && *p != ' ')
+        p++;
+
+      if (*p)
+      {
+        *p = '\0';
+        p++;
+      }
+    }
   }
+
   argv[argc] = NULL;
   return argc;
 }
 
 // Returns full path of executable if found in PATH, else NULL
 // Caller must free the returned string
-char *find_executable(const char *command)
+char* find_executable(const char* command)
 {
   if (!command || strlen(command) == 0)
     return NULL;
 
-  char *path_env = getenv("PATH");
+  char* path_env = getenv("PATH");
   if (!path_env)
     return NULL;
 
-  char *path_copy = strdup(path_env);
+  char* path_copy = strdup(path_env);
   if (!path_copy)
     return NULL;
 
-  char *token = strtok(path_copy, ":");
+  char* token = strtok(path_copy, ":");
   while (token)
   {
     char full_path[1024];
@@ -62,10 +100,10 @@ char *find_executable(const char *command)
 }
 
 // Executes external commands
-void execute_external(char *argv[])
+void execute_external(char* argv[])
 {
 
-  char *exe_path = find_executable(argv[0]);
+  char* exe_path = find_executable(argv[0]);
   if (!exe_path)
   {
     printf("%s: command not found\n", argv[0]);
@@ -93,14 +131,14 @@ void execute_external(char *argv[])
   free(exe_path);
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   // Flush after every printf
   setbuf(stdout, NULL); // remove the buffer of stdout i.e printing directly & not storing
 
   // REPL - Read Evaluate Print Loop
   char input[100]; // declaring a char array to store input command of user
-  char builtin[4][10] = {"echo", "exit", "type", "pwd"};
+  char builtin[4][10] = { "echo", "exit", "type", "pwd" };
   while (1)
   {
 
@@ -114,7 +152,7 @@ int main(int argc, char *argv[])
     // command[index] = '\0' -> Replacing next line char with null terminator
     input[strcspn(input, "\n")] = '\0';
 
-    char *argvv[20];
+    char* argvv[20];
     char input_copy[100];
 
     strcpy(input_copy, input);
@@ -140,7 +178,7 @@ int main(int argc, char *argv[])
     }
     else if (argc >= 2 && strcmp(argvv[0], "type") == 0)
     { // TYPE COMMAND
-      const char *cmd = argvv[1];
+      const char* cmd = argvv[1];
       int found = 0;
       int builtin_count = sizeof(builtin) / sizeof(builtin[0]);
 
@@ -158,7 +196,7 @@ int main(int argc, char *argv[])
       }
       else
       {
-        char *exe_path = find_executable(cmd);
+        char* exe_path = find_executable(cmd);
         if (exe_path)
         {
           printf("%s is %s\n", cmd, exe_path);
@@ -180,7 +218,7 @@ int main(int argc, char *argv[])
     }
     else if (strcmp(argvv[0], "cd") == 0)
     {
-      const char *path = NULL;
+      const char* path = NULL;
 
       if (argc == 1)
       {
