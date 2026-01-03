@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 // Tokenizes input into argv array, returns argc
 int tokenize(char *input, char *argv[], int max_args)
@@ -175,6 +176,13 @@ int main(int argc, char *argv[])
       if (getcwd(cwd, sizeof(cwd)) != NULL)
       {
         printf("%s\n", cwd);
+      }
+    }
+    else if (strcmp(argvv[0], "cd") == 0)
+    {
+      if (chdir(argvv[1]) != 0)
+      {
+        fprintf(stderr, "cd: %s: %s\n", argvv[1], strerror(errno));
       }
     }
     else
