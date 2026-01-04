@@ -37,6 +37,14 @@ int tokenize(char* input, char* argv[], int max_args)
         if (*p == '\'')
           p++;
       }
+      else if (*p == '\"') {
+        p++;
+        while (*p && *p != '\"') {
+          *w++ = *p++;
+        }
+        if (*p == '\"')
+          p++;
+      }
       else {
         *w++ = *p++;
       }
@@ -44,11 +52,6 @@ int tokenize(char* input, char* argv[], int max_args)
     if (*p)
       p++;
     *w++ = '\0';
-    // char* token = strtok(input, " \t");
-    // while(token && argc < max_args - 1){
-    //   argv[argc++] = token;
-    //   token = strtok(NULL, " \t");
-    // }
   }
   argv[argc] = NULL;
   return argc;
