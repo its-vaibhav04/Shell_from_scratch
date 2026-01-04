@@ -33,8 +33,13 @@ int tokenize(char* input, char* argv[], int max_args)
 
         char quote = *p++;
 
-        while (*p && *p != quote)
+        while (*p && *p != quote) {
           *w++ = *p++;
+          if (*p == '\\') {
+            p++;
+            *w++ = *p++;
+          }
+        }
 
         if (*p == quote)
           p++;
