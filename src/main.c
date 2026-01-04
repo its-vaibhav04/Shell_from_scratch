@@ -29,21 +29,23 @@ int tokenize(char* input, char* argv[], int max_args)
     argv[argc++] = w;
 
     while (*p && *p != ' ' && *p != '\t') {
-      if (*p == '\'') {
-        p++;
-        while (*p && *p != '\'') {
+      if (*p == '\'' || *p == '\"') {
+
+        char quote = *p++;
+
+        while (*p && *p != quote)
           *w++ = *p++;
-        }
-        if (*p == '\'')
+
+        if (*p == quote)
           p++;
       }
-      else if (*p == '\"') {
-        p++;
-        while (*p && *p != '\"') {
-          *w++ = *p++;
-        }
-        if (*p == '\"')
+      else if (*p == '\\') {
+        while (*p == '\\') {
           p++;
+          if (*p) {
+            *w++ = *p++;
+          }
+        }
       }
       else {
         *w++ = *p++;
