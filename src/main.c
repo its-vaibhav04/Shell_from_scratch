@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <errno.h>
@@ -146,6 +147,24 @@ void execute_external(char* argv[])
   free(exe_path);
 }
 
+// Parses redirection in argv, returns output file if found, else NULL
+char* parse_redirection(char* argv[])
+{
+  for (int i = 0; argv[i]; i++) {
+    if (strcmp(argv[i], ">") == 0) {
+      if (!argv[i + 1]) {
+        fprintf(stderr, "syntax error: missing file\n");
+        return NULL;
+      }
+      char* outfile = argv[i + 1];
+      argv[i] = NULL;
+      return outfile;
+    }
+  }
+  return NULL;
+}
+
+
 int main(int argc, char* argv[])
 {
   // Flush after every printf
@@ -176,6 +195,22 @@ int main(int argc, char* argv[])
     if (argc == 0)
       continue;
 
+    char* outfile = parse_redirection(argvv);
+
+    int saved_stdout = -1;
+    if (outfile) {
+      saved_stdout = dup(1);
+      int fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      if (fd < 0) {
+        perror(outfile);
+        continue;
+      }
+      dup2(fd, 1);
+      close(fd);
+    }
+
+
+
     // EXIT COMMAND
     if (argc == 1 && strcmp(argvv[0], "exit") == 0)
       break;
@@ -183,10 +218,10 @@ int main(int argc, char* argv[])
     // ECHO COMMAND
     if (strcmp(argvv[0], "echo") == 0)
     {
-      for (int i = 1; i < argc; i++)
+      for (int i = 1; i < argvv[i]; i++)
       {
         printf("%s", argvv[i]);
-        if (i < argc - 1)
+        if (argvv[i + 1])
           printf(" ");
       }
       printf("\n");
@@ -266,6 +301,12 @@ int main(int argc, char* argv[])
     }
     else
       execute_external(argvv);
+
+    if (outfile) {
+      dup2(saved_stdout, 1);
+      close(saved_stdout);
+    }
+
   }
   return 0;
 }
