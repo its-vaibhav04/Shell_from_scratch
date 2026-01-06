@@ -148,20 +148,24 @@ void execute_external(char* argv[])
 }
 
 // Parses redirection in argv, returns output file if found, else NULL
-char* parse_redirection(char* argv[])
+
+void parse_redirection(char* argv[], char** out_stdout, char** out_stderr)
 {
+  *out_stdout = NULL;
+  *out_stderr = NULL;
+
   for (int i = 0; argv[i]; i++) {
-    if (strcmp(argv[i], ">") == 0 || strcmp(argv[i], "1>") == 0) {
-      if (!argv[i + 1]) {
-        fprintf(stderr, "syntax error: missing file\n");
-        return NULL;
-      }
-      char* outfile = argv[i + 1];
+    if ((strcmp(argv[i], ">") == 0 || strcmp(argv[i], "1>") == 0) && argv[i + 1]) {
+      *out_stdout = argv[i + 1];
       argv[i] = NULL;
-      return outfile;
+      return;
+    }
+    else if (strcmp(argv[i], "2>") == 0 && argv[i + 1]) {
+      *out_stderr = argv[i + 1];
+      argv[i] = NULL;
+      return;
     }
   }
-  return NULL;
 }
 
 
@@ -172,7 +176,7 @@ int main(int argc, char* argv[])
 
   // REPL - Read Evaluate Print Loop
   char input[100]; // declaring a char array to store input command of user
-  char builtin[4][10] = { "echo", "exit", "type", "pwd" };
+  const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
   while (1)
   {
 
@@ -181,6 +185,8 @@ int main(int argc, char* argv[])
     // fgets(where to store the input, maximum capacity of input, from where the input is taken)
     fgets(input, 100, stdin);
     // Can do scanf() as well
+    if (!fgets(input, sizeof(input), stdin))
+      break;
 
     // strcspn(x,y) -> Read string x until any character from y matches (return the index of match)
     // command[index] = '\0' -> Replacing next line char with null terminator
@@ -195,21 +201,24 @@ int main(int argc, char* argv[])
     if (argc == 0)
       continue;
 
-    char* outfile = parse_redirection(argvv);
+    char* out_stdout, * out_stderr;
+    parse_redirection(argvv, &out_stdout, &out_stderr);
 
-    int saved_stdout = -1;
-    if (outfile) {
+    int saved_stdout = -1, saved_stderr = -1;
+
+    if (out_stdout) {
       saved_stdout = dup(1);
-      int fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-      if (fd < 0) {
-        perror(outfile);
-        continue;
-      }
+      int fd = open(out_stdout, O_WRONLY | O_CREAT | O_TRUNC, 0644);
       dup2(fd, 1);
       close(fd);
     }
 
-
+    if (out_stderr) {
+      saved_stderr = dup(2);
+      int fd = open(out_stderr, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      dup2(fd, 2);
+      close(fd);
+    }
 
     // EXIT COMMAND
     if (argc == 1 && strcmp(argvv[0], "exit") == 0)
@@ -302,9 +311,14 @@ int main(int argc, char* argv[])
     else
       execute_external(argvv);
 
-    if (outfile) {
+    if (out_stdout) {
       dup2(saved_stdout, 1);
       close(saved_stdout);
+    }
+
+    if (out_stderr) {
+      dup2(saved_stderr, 2);
+      close(saved_stderr);
     }
 
   }
