@@ -158,12 +158,14 @@ void parse_redirection(char* argv[], char** out_stdout, char** out_stderr)
     if ((strcmp(argv[i], ">") == 0 || strcmp(argv[i], "1>") == 0) && argv[i + 1]) {
       *out_stdout = argv[i + 1];
       argv[i] = NULL;
-      return;
+      argv[i + 1] = NULL;
+      continue;
     }
     else if (strcmp(argv[i], "2>") == 0 && argv[i + 1]) {
       *out_stderr = argv[i + 1];
       argv[i] = NULL;
-      return;
+      argv[i + 1] = NULL;
+      continue;
     }
   }
 }
@@ -183,10 +185,9 @@ int main(int argc, char* argv[])
     printf("$ ");
 
     // fgets(where to store the input, maximum capacity of input, from where the input is taken)
-    fgets(input, 100, stdin);
     // Can do scanf() as well
     if (!fgets(input, sizeof(input), stdin))
-      break;
+      goto cleanup_and_exit;
 
     // strcspn(x,y) -> Read string x until any character from y matches (return the index of match)
     // command[index] = '\0' -> Replacing next line char with null terminator
@@ -222,12 +223,12 @@ int main(int argc, char* argv[])
 
     // EXIT COMMAND
     if (argc == 1 && strcmp(argvv[0], "exit") == 0)
-      break;
+      goto cleanup_and_exit;
 
     // ECHO COMMAND
     if (strcmp(argvv[0], "echo") == 0)
     {
-      for (int i = 1; i < argvv[i]; i++)
+      for (int i = 1; argvv[i]; i++)
       {
         printf("%s", argvv[i]);
         if (argvv[i + 1])
@@ -285,7 +286,7 @@ int main(int argc, char* argv[])
         if (!path)
         {
           fprintf(stderr, "cd: HOME not set\n");
-          continue;
+          goto cleanup;
         }
       }
       else if (argc == 2 && strcmp(argvv[1], "~") == 0)
@@ -294,7 +295,7 @@ int main(int argc, char* argv[])
         if (!path)
         {
           fprintf(stderr, "cd: HOME not set\n");
-          continue;
+          goto cleanup;
         }
       }
       else if (argc == 2)
@@ -302,7 +303,7 @@ int main(int argc, char* argv[])
       else
       {
         fprintf(stderr, "cd: too many arguments\n");
-        continue;
+        goto cleanup;
       }
 
       if (chdir(path) != 0)
@@ -311,6 +312,7 @@ int main(int argc, char* argv[])
     else
       execute_external(argvv);
 
+  cleanup:
     if (out_stdout) {
       dup2(saved_stdout, 1);
       close(saved_stdout);
@@ -320,6 +322,19 @@ int main(int argc, char* argv[])
       dup2(saved_stderr, 2);
       close(saved_stderr);
     }
+    continue;
+
+  cleanup_and_exit:
+    if (out_stdout) {
+      dup2(saved_stdout, 1);
+      close(saved_stdout);
+    }
+
+    if (out_stderr) {
+      dup2(saved_stderr, 2);
+      close(saved_stderr);
+    }
+    break;
 
   }
   return 0;
