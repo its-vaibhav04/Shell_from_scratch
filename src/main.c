@@ -149,10 +149,13 @@ void execute_external(char* argv[])
 
 // Parses redirection in argv, returns output file if found, else NULL
 
-void parse_redirection(char* argv[], char** out_stdout, char** out_stderr)
+void parse_redirection(char* argv[], char** out_stdout, char** out_stderr, bool* stdout_append, bool* stderr_append)
 {
   *out_stdout = NULL;
   *out_stderr = NULL;
+  *stdout_append = false;
+  *stderr_append = false;
+
 
   for (int i = 0; argv[i]; i++) {
     if ((strcmp(argv[i], ">") == 0 || strcmp(argv[i], "1>") == 0) && argv[i + 1]) {
@@ -165,6 +168,20 @@ void parse_redirection(char* argv[], char** out_stdout, char** out_stderr)
       *out_stderr = argv[i + 1];
       argv[i] = NULL;
       argv[i + 1] = NULL;
+      continue;
+    }
+    else if ((strcmp(argv[i], ">>") == 0 || strcmp(argv[i], "1>>") == 0) && argv[i + 1]) {
+      *out_stdout = argv[i + 1];
+      argv[i] = NULL;
+      argv[i + 1] = NULL;
+      *stdout_append = true;
+      continue;
+    }
+    else if (strcmp(argv[i], "2>>") == 0 && argv[i + 1]) {
+      *out_stderr = argv[i + 1];
+      argv[i] = NULL;
+      argv[i + 1] = NULL;
+      *stderr_append = true;
       continue;
     }
   }
@@ -203,20 +220,25 @@ int main(int argc, char* argv[])
       continue;
 
     char* out_stdout, * out_stderr;
-    parse_redirection(argvv, &out_stdout, &out_stderr);
+    bool stdout_append, stderr_append;
+    parse_redirection(argvv, &out_stdout, &out_stderr, &stdout_append, &stderr_append);
 
     int saved_stdout = -1, saved_stderr = -1;
 
     if (out_stdout) {
+      int flags = O_WRONLY | O_CREAT |
+        (stdout_append ? O_APPEND : O_TRUNC);
       saved_stdout = dup(1);
-      int fd = open(out_stdout, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      int fd = open(out_stdout, flags, 0644);
       dup2(fd, 1);
       close(fd);
     }
 
     if (out_stderr) {
+      int flags = O_WRONLY | O_CREAT |
+        (stderr_append ? O_APPEND : O_TRUNC);
       saved_stderr = dup(2);
-      int fd = open(out_stderr, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      int fd = open(out_stderr, flags, 0644);
       dup2(fd, 2);
       close(fd);
     }
