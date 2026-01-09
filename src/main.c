@@ -469,6 +469,11 @@ int main(int argc, char* argv[])
         }
       }
 
+      if (match_count == 0) {
+        write(STDOUT_FILENO, "\x07", 1);
+        continue;
+      }
+
       if (match_count == 1) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
         int mlen = strlen(match);
