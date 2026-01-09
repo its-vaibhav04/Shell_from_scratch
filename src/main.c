@@ -8,6 +8,16 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <signal.h>
+#include <termios.h>
+
+void enable_raw_mode() {
+  struct termios raw;
+  tcgetattr(STDIN_FILENO, &raw);
+  raw.c_lflag &= ~(ECHO | ICANON);
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+}
+
 
 // Tokenizes input into argv array, returns argc
 int tokenize(char* input, char* argv[], int max_args)
@@ -187,6 +197,203 @@ void parse_redirection(char* argv[], char** out_stdout, char** out_stderr, bool*
   }
 }
 
+int collect_path_matches(const char* prefix,
+  char matches[][256],
+  int max_matches)
+{
+  int count = 0;
+  int prefix_len = strlen(prefix);
+
+  char* path_env = getenv("PATH");
+  if (!path_env)
+    return 0;
+
+  char* path_copy = strdup(path_env);
+  if (!path_copy)
+    return 0;
+
+  char* dir = strtok(path_copy, ":");
+  while (dir && count < max_matches) {
+    DIR* dp = opendir(dir);
+    if (dp) {
+      struct dirent* entry;
+      while ((entry = readdir(dp)) && count < max_matches) {
+        if (strncmp(entry->d_name, prefix, prefix_len) == 0) {
+
+          char full[1024];
+          snprintf(full, sizeof(full), "%s/%s", dir, entry->d_name);
+
+          if (access(full, X_OK) == 0) {
+            strncpy(matches[count], entry->d_name, 255);
+            matches[count][255] = '\0';
+            count++;
+          }
+        }
+      }
+      closedir(dp);
+    }
+    dir = strtok(NULL, ":");
+  }
+
+  free(path_copy);
+  return count;
+}
+
+void handle_sigint(int sig) {
+  (void)sig;
+  write(STDOUT_FILENO, "\n$ ", 3);
+}
+const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
+
+void handle_command(char* buffer) {
+  char* argvv[20];
+  char input_copy[100];
+
+  strcpy(input_copy, buffer);
+  int argc = tokenize(input_copy, argvv, 20);
+
+  if (argc == 0)
+    return;
+
+  char* out_stdout, * out_stderr;
+  bool stdout_append, stderr_append;
+  parse_redirection(argvv, &out_stdout, &out_stderr, &stdout_append, &stderr_append);
+
+  int saved_stdout = -1, saved_stderr = -1;
+
+  if (out_stdout) {
+    int flags = O_WRONLY | O_CREAT |
+      (stdout_append ? O_APPEND : O_TRUNC);
+    saved_stdout = dup(1);
+    int fd = open(out_stdout, flags, 0644);
+    dup2(fd, 1);
+    close(fd);
+  }
+
+  if (out_stderr) {
+    int flags = O_WRONLY | O_CREAT |
+      (stderr_append ? O_APPEND : O_TRUNC);
+    saved_stderr = dup(2);
+    int fd = open(out_stderr, flags, 0644);
+    dup2(fd, 2);
+    close(fd);
+  }
+
+  // EXIT COMMAND
+  if (argc == 1 && strcmp(argvv[0], "exit") == 0)
+    exit(0);
+
+  // ECHO COMMAND
+  if (strcmp(argvv[0], "echo") == 0)
+  {
+    for (int i = 1; argvv[i]; i++)
+    {
+      printf("%s", argvv[i]);
+      if (argvv[i + 1])
+        printf(" ");
+    }
+    printf("\n");
+  }
+  else if (argc >= 2 && strcmp(argvv[0], "type") == 0)
+  { // TYPE COMMAND
+    const char* cmd = argvv[1];
+    int found = 0;
+    int builtin_count = sizeof(builtin) / sizeof(builtin[0]);
+
+    for (int i = 0; i < builtin_count; i++)
+    { // Checks command for each builtin
+      if (strcmp(builtin[i], cmd) == 0)
+      {
+        found = 1;
+        break;
+      }
+    }
+    if (found)
+    {
+      printf("%s is a shell builtin\n", cmd);
+    }
+    else
+    {
+      char* exe_path = find_executable(cmd);
+      if (exe_path)
+      {
+        printf("%s is %s\n", cmd, exe_path);
+        free(exe_path);
+      }
+      else
+      {
+        printf("%s: not found\n", cmd);
+      }
+    }
+  }
+  else if (strcmp(argvv[0], "pwd") == 0)
+  {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL)
+    {
+      printf("%s\n", cwd);
+    }
+  }
+  else if (strcmp(argvv[0], "cd") == 0)
+  {
+    const char* path = NULL;
+
+    if (argc == 1)
+    {
+      path = getenv("HOME");
+      if (!path)
+      {
+        fprintf(stderr, "cd: HOME not set\n");
+        goto cleanup;
+      }
+    }
+    else if (argc == 2 && strcmp(argvv[1], "~") == 0)
+    {
+      path = getenv("HOME");
+      if (!path)
+      {
+        fprintf(stderr, "cd: HOME not set\n");
+        goto cleanup;
+      }
+    }
+    else if (argc == 2)
+      path = argvv[1];
+    else
+    {
+      fprintf(stderr, "cd: too many arguments\n");
+      goto cleanup;
+    }
+
+    if (chdir(path) != 0)
+      fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
+  }
+  else
+    execute_external(argvv);
+
+cleanup:
+  if (out_stdout) {
+    dup2(saved_stdout, 1);
+    close(saved_stdout);
+  }
+
+  if (out_stderr) {
+    dup2(saved_stderr, 2);
+    close(saved_stderr);
+  }
+  return;
+
+cleanup_and_exit:
+  if (out_stdout) {
+    dup2(saved_stdout, 1);
+    close(saved_stdout);
+  }
+
+  if (out_stderr) {
+    dup2(saved_stderr, 2);
+    close(saved_stderr);
+  }
+  return;
+}
 
 int main(int argc, char* argv[])
 {
@@ -194,169 +401,285 @@ int main(int argc, char* argv[])
   setbuf(stdout, NULL); // remove the buffer of stdout i.e printing directly & not storing
 
   // REPL - Read Evaluate Print Loop
-  char input[100]; // declaring a char array to store input command of user
-  const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
+  // char input[100]; // declaring a char array to store input command of user
+  // const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
+  signal(SIGINT, handle_sigint);
+  enable_raw_mode();
+  char buffer[1024];
+  int len = 0;
+  write(STDOUT_FILENO, "$ ", 2);
   while (1)
   {
+    char c;
+    ssize_t n = read(STDIN_FILENO, &c, 1);
+    if (n < 0) {
+      if (errno == EINTR) {
+        len = 0;
+        continue;
+      }
+      break;
+    }
+    if (n == 0) {
+      if (len == 0) {
+        write(STDOUT_FILENO, "\n", 1);
+        break;
+      }
+      continue;
+    }
 
-    printf("$ ");
+
+    if (c == '\n') {
+      buffer[len] = '\0';
+      write(STDOUT_FILENO, "\n", 1);
+      if (len > 0) {
+        handle_command(buffer);
+      }
+      len = 0;
+      write(STDOUT_FILENO, "$ ", 2);
+      continue;
+    }
+
+    if (c == '\t') {
+      int i = len - 1;
+      while (i >= 0 && buffer[i] != ' ')
+        i--;
+
+      int start = i + 1;
+      int prefix_len = len - start;
+
+      int match_count = 0;
+      const char* match = NULL;
+      bool builtin_matched = false;
+
+      char matches[128][256];
+      int path_match_count = collect_path_matches(buffer + start, matches, 128);
+
+      for (int b = 0; builtin[b]; b++) {
+        if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
+          match_count++;
+          match = builtin[b];
+          builtin_matched = true;
+        }
+      }
+
+      if (!builtin_matched) {
+        for (int j = 0; j < path_match_count; j++) {
+          match_count++;
+          match = matches[j];
+        }
+      }
+
+      if (match_count == 1) {
+        write(STDOUT_FILENO, "\r\033[K$ ", 6);
+        int mlen = strlen(match);
+        memcpy(buffer + start, match, mlen);
+        buffer[start + mlen] = ' ';
+        len = start + mlen + 1;
+        buffer[len] = '\0';
+        write(STDOUT_FILENO, buffer, len);
+        continue;
+      }
+
+
+      if (match_count > 1) {
+        write(STDOUT_FILENO, "\n", 1);
+
+        // print builtins
+        for (int b = 0; builtin[b]; b++) {
+          if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
+            write(STDOUT_FILENO, "  ", 2);
+            write(STDOUT_FILENO, builtin[b], strlen(builtin[b]));
+            write(STDOUT_FILENO, "\n", 1);
+          }
+        }
+
+        // print PATH matches only if no builtin matched
+        if (!builtin_matched) {
+          for (int j = 0; j < path_match_count; j++) {
+            write(STDOUT_FILENO, "  ", 2);
+            write(STDOUT_FILENO, matches[j], strlen(matches[j]));
+            write(STDOUT_FILENO, "\n", 1);
+          }
+        }
+      }
+
+      write(STDOUT_FILENO, "\r\033[K$ ", 6);
+      write(STDOUT_FILENO, buffer, len);
+
+      continue;
+    }
+
+    if (c == 127) {
+      if (len > 0) {
+        len--;
+        buffer[len] = '\0';
+
+        // Move cursor back, erase char, move back again
+        write(STDOUT_FILENO, "\b \b", 3);
+      }
+      continue;
+    }
+
+    buffer[len++] = c;
+    write(STDOUT_FILENO, &c, 1);
+    // printf("$ ");
 
     // fgets(where to store the input, maximum capacity of input, from where the input is taken)
     // Can do scanf() as well
-    if (!fgets(input, sizeof(input), stdin))
-      goto cleanup_and_exit;
+    // if (!fgets(input, sizeof(input), stdin))
+    // goto cleanup_and_exit;
 
     // strcspn(x,y) -> Read string x until any character from y matches (return the index of match)
     // command[index] = '\0' -> Replacing next line char with null terminator
-    input[strcspn(input, "\n")] = '\0';
+    // input[strcspn(input, "\n")] = '\0';
 
-    char* argvv[20];
-    char input_copy[100];
+  //   char* argvv[20];
+  //   char input_copy[100];
 
-    strcpy(input_copy, input);
-    int argc = tokenize(input_copy, argvv, 20);
+  //   strcpy(input_copy, input);
+  //   int argc = tokenize(input_copy, argvv, 20);
 
-    if (argc == 0)
-      continue;
+  //   if (argc == 0)
+  //     continue;
 
-    char* out_stdout, * out_stderr;
-    bool stdout_append, stderr_append;
-    parse_redirection(argvv, &out_stdout, &out_stderr, &stdout_append, &stderr_append);
+  //   char* out_stdout, * out_stderr;
+  //   bool stdout_append, stderr_append;
+  //   parse_redirection(argvv, &out_stdout, &out_stderr, &stdout_append, &stderr_append);
 
-    int saved_stdout = -1, saved_stderr = -1;
+  //   int saved_stdout = -1, saved_stderr = -1;
 
-    if (out_stdout) {
-      int flags = O_WRONLY | O_CREAT |
-        (stdout_append ? O_APPEND : O_TRUNC);
-      saved_stdout = dup(1);
-      int fd = open(out_stdout, flags, 0644);
-      dup2(fd, 1);
-      close(fd);
-    }
+  //   if (out_stdout) {
+  //     int flags = O_WRONLY | O_CREAT |
+  //       (stdout_append ? O_APPEND : O_TRUNC);
+  //     saved_stdout = dup(1);
+  //     int fd = open(out_stdout, flags, 0644);
+  //     dup2(fd, 1);
+  //     close(fd);
+  //   }
 
-    if (out_stderr) {
-      int flags = O_WRONLY | O_CREAT |
-        (stderr_append ? O_APPEND : O_TRUNC);
-      saved_stderr = dup(2);
-      int fd = open(out_stderr, flags, 0644);
-      dup2(fd, 2);
-      close(fd);
-    }
+  //   if (out_stderr) {
+  //     int flags = O_WRONLY | O_CREAT |
+  //       (stderr_append ? O_APPEND : O_TRUNC);
+  //     saved_stderr = dup(2);
+  //     int fd = open(out_stderr, flags, 0644);
+  //     dup2(fd, 2);
+  //     close(fd);
+  //   }
 
-    // EXIT COMMAND
-    if (argc == 1 && strcmp(argvv[0], "exit") == 0)
-      goto cleanup_and_exit;
+  //   // EXIT COMMAND
+  //   if (argc == 1 && strcmp(argvv[0], "exit") == 0)
+  //     goto cleanup_and_exit;
 
-    // ECHO COMMAND
-    if (strcmp(argvv[0], "echo") == 0)
-    {
-      for (int i = 1; argvv[i]; i++)
-      {
-        printf("%s", argvv[i]);
-        if (argvv[i + 1])
-          printf(" ");
-      }
-      printf("\n");
-    }
-    else if (argc >= 2 && strcmp(argvv[0], "type") == 0)
-    { // TYPE COMMAND
-      const char* cmd = argvv[1];
-      int found = 0;
-      int builtin_count = sizeof(builtin) / sizeof(builtin[0]);
+  //   // ECHO COMMAND
+  //   if (strcmp(argvv[0], "echo") == 0)
+  //   {
+  //     for (int i = 1; argvv[i]; i++)
+  //     {
+  //       printf("%s", argvv[i]);
+  //       if (argvv[i + 1])
+  //         printf(" ");
+  //     }
+  //     printf("\n");
+  //   }
+  //   else if (argc >= 2 && strcmp(argvv[0], "type") == 0)
+  //   { // TYPE COMMAND
+  //     const char* cmd = argvv[1];
+  //     int found = 0;
+  //     int builtin_count = sizeof(builtin) / sizeof(builtin[0]);
 
-      for (int i = 0; i < builtin_count; i++)
-      { // Checks command for each builtin
-        if (strcmp(builtin[i], cmd) == 0)
-        {
-          found = 1;
-          break;
-        }
-      }
-      if (found)
-      {
-        printf("%s is a shell builtin\n", cmd);
-      }
-      else
-      {
-        char* exe_path = find_executable(cmd);
-        if (exe_path)
-        {
-          printf("%s is %s\n", cmd, exe_path);
-          free(exe_path);
-        }
-        else
-        {
-          printf("%s: not found\n", cmd);
-        }
-      }
-    }
-    else if (strcmp(argvv[0], "pwd") == 0)
-    {
-      char cwd[1024];
-      if (getcwd(cwd, sizeof(cwd)) != NULL)
-      {
-        printf("%s\n", cwd);
-      }
-    }
-    else if (strcmp(argvv[0], "cd") == 0)
-    {
-      const char* path = NULL;
+  //     for (int i = 0; i < builtin_count; i++)
+  //     { // Checks command for each builtin
+  //       if (strcmp(builtin[i], cmd) == 0)
+  //       {
+  //         found = 1;
+  //         break;
+  //       }
+  //     }
+  //     if (found)
+  //     {
+  //       printf("%s is a shell builtin\n", cmd);
+  //     }
+  //     else
+  //     {
+  //       char* exe_path = find_executable(cmd);
+  //       if (exe_path)
+  //       {
+  //         printf("%s is %s\n", cmd, exe_path);
+  //         free(exe_path);
+  //       }
+  //       else
+  //       {
+  //         printf("%s: not found\n", cmd);
+  //       }
+  //     }
+  //   }
+  //   else if (strcmp(argvv[0], "pwd") == 0)
+  //   {
+  //     char cwd[1024];
+  //     if (getcwd(cwd, sizeof(cwd)) != NULL)
+  //     {
+  //       printf("%s\n", cwd);
+  //     }
+  //   }
+  //   else if (strcmp(argvv[0], "cd") == 0)
+  //   {
+  //     const char* path = NULL;
 
-      if (argc == 1)
-      {
-        path = getenv("HOME");
-        if (!path)
-        {
-          fprintf(stderr, "cd: HOME not set\n");
-          goto cleanup;
-        }
-      }
-      else if (argc == 2 && strcmp(argvv[1], "~") == 0)
-      {
-        path = getenv("HOME");
-        if (!path)
-        {
-          fprintf(stderr, "cd: HOME not set\n");
-          goto cleanup;
-        }
-      }
-      else if (argc == 2)
-        path = argvv[1];
-      else
-      {
-        fprintf(stderr, "cd: too many arguments\n");
-        goto cleanup;
-      }
+  //     if (argc == 1)
+  //     {
+  //       path = getenv("HOME");
+  //       if (!path)
+  //       {
+  //         fprintf(stderr, "cd: HOME not set\n");
+  //         goto cleanup;
+  //       }
+  //     }
+  //     else if (argc == 2 && strcmp(argvv[1], "~") == 0)
+  //     {
+  //       path = getenv("HOME");
+  //       if (!path)
+  //       {
+  //         fprintf(stderr, "cd: HOME not set\n");
+  //         goto cleanup;
+  //       }
+  //     }
+  //     else if (argc == 2)
+  //       path = argvv[1];
+  //     else
+  //     {
+  //       fprintf(stderr, "cd: too many arguments\n");
+  //       goto cleanup;
+  //     }
 
-      if (chdir(path) != 0)
-        fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
-    }
-    else
-      execute_external(argvv);
+  //     if (chdir(path) != 0)
+  //       fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
+  //   }
+  //   else
+  //     execute_external(argvv);
 
-  cleanup:
-    if (out_stdout) {
-      dup2(saved_stdout, 1);
-      close(saved_stdout);
-    }
+  // cleanup:
+  //   if (out_stdout) {
+  //     dup2(saved_stdout, 1);
+  //     close(saved_stdout);
+  //   }
 
-    if (out_stderr) {
-      dup2(saved_stderr, 2);
-      close(saved_stderr);
-    }
-    continue;
+  //   if (out_stderr) {
+  //     dup2(saved_stderr, 2);
+  //     close(saved_stderr);
+  //   }
+  //   continue;
 
-  cleanup_and_exit:
-    if (out_stdout) {
-      dup2(saved_stdout, 1);
-      close(saved_stdout);
-    }
+  // cleanup_and_exit:
+  //   if (out_stdout) {
+  //     dup2(saved_stdout, 1);
+  //     close(saved_stdout);
+  //   }
 
-    if (out_stderr) {
-      dup2(saved_stderr, 2);
-      close(saved_stderr);
-    }
-    break;
+  //   if (out_stderr) {
+  //     dup2(saved_stderr, 2);
+  //     close(saved_stderr);
+  //   }
+  //   break;
 
   }
   return 0;
