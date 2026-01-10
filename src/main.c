@@ -479,25 +479,12 @@ int main(int argc, char* argv[])
 
       for (int b = 0; builtin[b]; b++) {
         if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-          strncpy(matches[match_count], builtin[b], 255);
-          matches[match_count][255] = '\0';
-          match_count++;
+          strncpy(matches[match_count++], builtin[b], 255);
         }
       }
 
       if (match_count == 0) {
-        int path_count = collect_path_matches(buffer + start, matches, 128);
-        qsort(matches, path_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
-
-        match_count = 0;
-        for (int j = 0; j < path_count; j++) {
-          if (j == 0 || strcmp(matches[j], matches[match_count - 1]) != 0) {
-            if (j != match_count) {
-              strcpy(matches[match_count], matches[j]);
-            }
-            match_count++;
-          }
-        }
+        match_count = collect_path_matches(buffer + start, matches, 128);
       }
 
       if (match_count == 0) {
@@ -506,14 +493,8 @@ int main(int argc, char* argv[])
         continue;
       }
 
-      int lcp_len = strlen(matches[0]);
-      for (int j = 1; j < match_count; j++) {
-        int k = 0;
-        while (k < lcp_len && matches[0][k] == matches[j][k]) {
-          k++;
-        }
-        lcp_len = k;
-      }
+      qsort(matches, match_count, sizeof(matches[0]), cmp_strings);
+      int lcp_len = longest_common_prefix(matches, match_count);
 
       if (lcp_len > prefix_len) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
@@ -545,8 +526,6 @@ int main(int argc, char* argv[])
 
       last_was_tab = false;
 
-      qsort(matches, match_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
-
       write(STDOUT_FILENO, "\n", 1);
       for (int j = 0; j < match_count; j++) {
         write(STDOUT_FILENO, matches[j], strlen(matches[j]));
@@ -558,6 +537,7 @@ int main(int argc, char* argv[])
       write(STDOUT_FILENO, buffer, len);
       continue;
     }
+
 
     if (c == 127) {
       if (len > 0) {
