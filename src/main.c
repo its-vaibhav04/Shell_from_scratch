@@ -407,6 +407,7 @@ int main(int argc, char* argv[])
   enable_raw_mode();
   char buffer[1024];
   int len = 0;
+  bool last_was_tab = false;
   write(STDOUT_FILENO, "$ ", 2);
   while (1)
   {
@@ -418,6 +419,9 @@ int main(int argc, char* argv[])
         continue;
       }
       break;
+    }
+    if (c != '\t') {
+      last_was_tab = false;
     }
     if (n == 0) {
       if (len == 0) {
@@ -471,6 +475,7 @@ int main(int argc, char* argv[])
 
       if (match_count == 0) {
         write(STDOUT_FILENO, "\x07", 1);
+        last_was_tab = true;
         continue;
       }
 
@@ -485,25 +490,32 @@ int main(int argc, char* argv[])
         continue;
       }
 
-
       if (match_count > 1) {
+        if (!last_was_tab) {
+          write(STDOUT_FILENO, "\x07", 1);
+          last_was_tab = true;
+          continue;
+        }
+        last_was_tab = false;
+
+        qsort(matches, path_match_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
         write(STDOUT_FILENO, "\n", 1);
 
         // print builtins
         for (int b = 0; builtin[b]; b++) {
           if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-            write(STDOUT_FILENO, "  ", 2);
             write(STDOUT_FILENO, builtin[b], strlen(builtin[b]));
-            write(STDOUT_FILENO, "\n", 1);
+            write(STDOUT_FILENO, "  ", 2);
           }
         }
 
         // print PATH matches only if no builtin matched
         if (!builtin_matched) {
           for (int j = 0; j < path_match_count; j++) {
-            write(STDOUT_FILENO, "  ", 2);
             write(STDOUT_FILENO, matches[j], strlen(matches[j]));
-            write(STDOUT_FILENO, "\n", 1);
+            if (j < path_match_count - 1) {
+              write(STDOUT_FILENO, "  ", 2);
+            }
           }
         }
       }
