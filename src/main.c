@@ -475,67 +475,46 @@ int main(int argc, char* argv[])
       int prefix_len = len - start;
 
       char matches[128][256];
-      int path_count = collect_path_matches(buffer + start, matches, 128);
-
-      int builtin_count = 0;
-      const char* builtin_match = NULL;
+      int match_count = 0;
 
       for (int b = 0; builtin[b]; b++) {
         if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-          builtin_count++;
-          builtin_match = builtin[b];
+          strncpy(matches[match_count], builtin[b], 255);
+          matches[match_count][255] = '\0';
+          match_count++;
         }
       }
 
-      if (builtin_count == 1) {
+      if (match_count == 0) {
+        match_count = collect_path_matches(buffer + start, matches, 128);
+      }
+
+      if (match_count == 0) {
+        write(STDOUT_FILENO, "\x07", 1);
+        last_was_tab = false;
+        continue;
+      }
+
+      int lcp_len = strlen(matches[0]);
+      for (int j = 1; j < match_count; j++) {
+        int k = 0;
+        while (k < lcp_len && matches[0][k] == matches[j][k]) {
+          k++;
+        }
+        lcp_len = k;
+      }
+
+      if (lcp_len > prefix_len) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
-        int mlen = strlen(builtin_match);
-        memcpy(buffer + start, builtin_match, mlen);
-        buffer[start + mlen] = ' ';
-        len = start + mlen + 1;
+        memcpy(buffer + start, matches[0], lcp_len);
+        len = start + lcp_len;
         buffer[len] = '\0';
         write(STDOUT_FILENO, buffer, len);
         last_was_tab = false;
         continue;
       }
 
-
-      // if (path_count > 1) {
-      //   int remaining = 0;
-      //   const char* only = NULL;
-
-      //   for (int j = 0; j < path_count; j++) {
-      //     if (strncmp(matches[j], buffer + start, prefix_len) == 0) {
-      //       remaining++;
-      //       only = matches[j];
-      //     }
-      //   }
-
-      //   if (remaining == 1) {
-      //     write(STDOUT_FILENO, "\r\033[K$ ", 6);
-      //     int mlen = strlen(only);
-      //     memcpy(buffer + start, only, mlen);
-      //     len = start + mlen;
-      //     buffer[len] = '\0';
-      //     write(STDOUT_FILENO, buffer, len);
-      //     last_was_tab = false;
-      //     continue;
-      //   }
-      // }
-
-      if (path_count > 1) {
-        int lcp_len = longest_common_prefix(matches, path_count);
-        if (lcp_len > prefix_len) {
-          write(STDOUT_FILENO, "\r\033[K$ ", 6);
-          memcpy(buffer + start, matches[0], lcp_len);
-          len = start + lcp_len;
-          buffer[len] = '\0';
-          write(STDOUT_FILENO, buffer, len);
-          last_was_tab = false;
-          continue;
-        }
-      }
-      if (path_count == 1) {
+      if (match_count == 1) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
         int mlen = strlen(matches[0]);
         memcpy(buffer + start, matches[0], mlen);
@@ -555,13 +534,12 @@ int main(int argc, char* argv[])
 
       last_was_tab = false;
 
-      qsort(matches, path_count, sizeof(matches[0]),
-        (int (*)(const void*, const void*))strcmp);
+      qsort(matches, match_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
 
       write(STDOUT_FILENO, "\n", 1);
-      for (int j = 0; j < path_count; j++) {
+      for (int j = 0; j < match_count; j++) {
         write(STDOUT_FILENO, matches[j], strlen(matches[j]));
-        if (j < path_count - 1)
+        if (j < match_count - 1)
           write(STDOUT_FILENO, "  ", 2);
       }
 
