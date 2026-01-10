@@ -458,25 +458,45 @@ int main(int argc, char* argv[])
       int prefix_len = len - start;
 
       char matches[128][256];
-      int match_count = collect_path_matches(buffer + start, matches, 128);
+      int path_count = collect_path_matches(buffer + start, matches, 128);
 
-      if (match_count == 0) {
-        write(STDOUT_FILENO, "\x07", 1);
+      int builtin_count = 0;
+      const char* builtin_match = NULL;
+
+      for (int b = 0; builtin[b]; b++) {
+        if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
+          builtin_count++;
+          builtin_match = builtin[b];
+        }
+      }
+
+      if (builtin_count == 1) {
+        write(STDOUT_FILENO, "\r\033[K$ ", 6);
+        int mlen = strlen(builtin_match);
+        memcpy(buffer + start, builtin_match, mlen);
+        buffer[start + mlen] = ' ';
+        len = start + mlen + 1;
+        buffer[len] = '\0';
+        write(STDOUT_FILENO, buffer, len);
         last_was_tab = false;
         continue;
       }
 
-      if (match_count == 1) {
+      if (builtin_count == 0 && path_count == 1) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
-
         int mlen = strlen(matches[0]);
         memcpy(buffer + start, matches[0], mlen);
         buffer[start + mlen] = ' ';
         len = start + mlen + 1;
         buffer[len] = '\0';
-
         write(STDOUT_FILENO, buffer, len);
         last_was_tab = false;
+        continue;
+      }
+
+      if (builtin_count == 0 && path_count == 0) {
+        write(STDOUT_FILENO, "\x07", 1);
+        last_was_tab = true;
         continue;
       }
 
@@ -488,14 +508,24 @@ int main(int argc, char* argv[])
 
       last_was_tab = false;
 
-      qsort(matches, match_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
-
       write(STDOUT_FILENO, "\n", 1);
 
-      for (int j = 0; j < match_count; j++) {
-        write(STDOUT_FILENO, matches[j], strlen(matches[j]));
-        if (j < match_count - 1)
+      for (int b = 0; builtin[b]; b++) {
+        if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
+          write(STDOUT_FILENO, builtin[b], strlen(builtin[b]));
           write(STDOUT_FILENO, "  ", 2);
+        }
+      }
+
+      if (builtin_count == 0) {
+        qsort(matches, path_count, sizeof(matches[0]),
+          (int (*)(const void*, const void*))strcmp);
+
+        for (int j = 0; j < path_count; j++) {
+          write(STDOUT_FILENO, matches[j], strlen(matches[j]));
+          if (j < path_count - 1)
+            write(STDOUT_FILENO, "  ", 2);
+        }
       }
 
       write(STDOUT_FILENO, "\n$ ", 3);
