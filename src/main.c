@@ -486,7 +486,18 @@ int main(int argc, char* argv[])
       }
 
       if (match_count == 0) {
-        match_count = collect_path_matches(buffer + start, matches, 128);
+        int path_count = collect_path_matches(buffer + start, matches, 128);
+        qsort(matches, path_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
+
+        match_count = 0;
+        for (int j = 0; j < path_count; j++) {
+          if (j == 0 || strcmp(matches[j], matches[match_count - 1]) != 0) {
+            if (j != match_count) {
+              strcpy(matches[match_count], matches[j]);
+            }
+            match_count++;
+          }
+        }
       }
 
       if (match_count == 0) {
