@@ -498,16 +498,41 @@ int main(int argc, char* argv[])
         last_was_tab = false;
         continue;
       }
-      int lcp_len = longest_common_prefix(matches, path_count);
 
-      if (lcp_len > prefix_len) {
-        write(STDOUT_FILENO, "\r\033[K$ ", 6);
-        memcpy(buffer + start, matches[0], lcp_len);
-        len = start + lcp_len;
-        buffer[len] = '\0';
-        write(STDOUT_FILENO, buffer, len);
-        last_was_tab = false;
-        continue;
+      if (path_count > 1) {
+        int lcp_len = longest_common_prefix(matches, path_count);
+        if (lcp_len > prefix_len) {
+          write(STDOUT_FILENO, "\r\033[K$ ", 6);
+          memcpy(buffer + start, matches[0], lcp_len);
+          len = start + lcp_len;
+          buffer[len] = '\0';
+          write(STDOUT_FILENO, buffer, len);
+          last_was_tab = false;
+          continue;
+        }
+      }
+
+      if (path_count > 1) {
+        int remaining = 0;
+        const char* only = NULL;
+
+        for (int j = 0; j < path_count; j++) {
+          if (strncmp(matches[j], buffer + start, prefix_len) == 0) {
+            remaining++;
+            only = matches[j];
+          }
+        }
+
+        if (remaining == 1) {
+          write(STDOUT_FILENO, "\r\033[K$ ", 6);
+          int mlen = strlen(only);
+          memcpy(buffer + start, only, mlen);
+          len = start + mlen;
+          buffer[len] = '\0';
+          write(STDOUT_FILENO, buffer, len);
+          last_was_tab = false;
+          continue;
+        }
       }
 
       if (path_count == 1) {
@@ -530,9 +555,10 @@ int main(int argc, char* argv[])
 
       last_was_tab = false;
 
-      qsort(matches, path_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
-      write(STDOUT_FILENO, "\n", 1);
+      qsort(matches, path_count, sizeof(matches[0]),
+        (int (*)(const void*, const void*))strcmp);
 
+      write(STDOUT_FILENO, "\n", 1);
       for (int j = 0; j < path_count; j++) {
         write(STDOUT_FILENO, matches[j], strlen(matches[j]));
         if (j < path_count - 1)
@@ -543,6 +569,7 @@ int main(int argc, char* argv[])
       write(STDOUT_FILENO, buffer, len);
       continue;
     }
+
 
 
 
