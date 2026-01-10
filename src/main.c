@@ -508,30 +508,20 @@ int main(int argc, char* argv[])
 
       last_was_tab = false;
 
+      qsort(matches, path_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
       write(STDOUT_FILENO, "\n", 1);
 
-      for (int b = 0; builtin[b]; b++) {
-        if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-          write(STDOUT_FILENO, builtin[b], strlen(builtin[b]));
+      for (int j = 0; j < path_count; j++) {
+        write(STDOUT_FILENO, matches[j], strlen(matches[j]));
+        if (j < path_count - 1)
           write(STDOUT_FILENO, "  ", 2);
-        }
-      }
-
-      if (builtin_count == 0) {
-        qsort(matches, path_count, sizeof(matches[0]),
-          (int (*)(const void*, const void*))strcmp);
-
-        for (int j = 0; j < path_count; j++) {
-          write(STDOUT_FILENO, matches[j], strlen(matches[j]));
-          if (j < path_count - 1)
-            write(STDOUT_FILENO, "  ", 2);
-        }
       }
 
       write(STDOUT_FILENO, "\n$ ", 3);
       write(STDOUT_FILENO, buffer, len);
       continue;
     }
+
 
 
     if (c == 127) {
