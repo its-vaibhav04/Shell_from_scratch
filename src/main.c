@@ -458,39 +458,47 @@ int main(int argc, char* argv[])
       int prefix_len = len - start;
 
       char matches[128][256];
-      int path_match_count =
-        collect_path_matches(buffer + start, matches, 128);
+      int match_count = collect_path_matches(buffer + start, matches, 128);
 
-      if (path_match_count == 0) {
+      if (match_count == 0) {
         write(STDOUT_FILENO, "\x07", 1);
-        last_was_tab = true;
+        last_was_tab = false;
         continue;
       }
 
-      /* FIRST TAB → bell */
+      if (match_count == 1) {
+        write(STDOUT_FILENO, "\r\033[K$ ", 6);
+
+        int mlen = strlen(matches[0]);
+        memcpy(buffer + start, matches[0], mlen);
+        buffer[start + mlen] = ' ';
+        len = start + mlen + 1;
+        buffer[len] = '\0';
+
+        write(STDOUT_FILENO, buffer, len);
+        last_was_tab = false;
+        continue;
+      }
+
       if (!last_was_tab) {
         write(STDOUT_FILENO, "\x07", 1);
         last_was_tab = true;
         continue;
       }
 
-      /* SECOND TAB → print matches */
       last_was_tab = false;
 
-      qsort(matches, path_match_count,
-        sizeof(matches[0]), cmp_strings);
+      qsort(matches, match_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
 
       write(STDOUT_FILENO, "\n", 1);
 
-      for (int j = 0; j < path_match_count; j++) {
+      for (int j = 0; j < match_count; j++) {
         write(STDOUT_FILENO, matches[j], strlen(matches[j]));
-        if (j < path_match_count - 1)
+        if (j < match_count - 1)
           write(STDOUT_FILENO, "  ", 2);
       }
 
-      write(STDOUT_FILENO, "\n", 1);
-
-      write(STDOUT_FILENO, "$ ", 2);
+      write(STDOUT_FILENO, "\n$ ", 3);
       write(STDOUT_FILENO, buffer, len);
       continue;
     }
