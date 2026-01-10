@@ -18,6 +18,12 @@ void enable_raw_mode() {
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
+int cmp_strings(const void* a, const void* b) {
+  const char* sa = (const char*)a;
+  const char* sb = (const char*)b;
+  return strcmp(sa, sb);
+}
+
 
 // Tokenizes input into argv array, returns argc
 int tokenize(char* input, char* argv[], int max_args)
@@ -451,80 +457,44 @@ int main(int argc, char* argv[])
       int start = i + 1;
       int prefix_len = len - start;
 
-      int match_count = 0;
-      const char* match = NULL;
-      bool builtin_matched = false;
-
       char matches[128][256];
-      int path_match_count = collect_path_matches(buffer + start, matches, 128);
+      int path_match_count =
+        collect_path_matches(buffer + start, matches, 128);
 
-      for (int b = 0; builtin[b]; b++) {
-        if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-          match_count++;
-          match = builtin[b];
-          builtin_matched = true;
-        }
-      }
-
-      if (!builtin_matched) {
-        for (int j = 0; j < path_match_count; j++) {
-          match_count++;
-          match = matches[j];
-        }
-      }
-
-      if (match_count == 0) {
+      if (path_match_count == 0) {
         write(STDOUT_FILENO, "\x07", 1);
         last_was_tab = true;
         continue;
       }
 
-      if (match_count == 1) {
-        write(STDOUT_FILENO, "\r\033[K$ ", 6);
-        int mlen = strlen(match);
-        memcpy(buffer + start, match, mlen);
-        buffer[start + mlen] = ' ';
-        len = start + mlen + 1;
-        buffer[len] = '\0';
-        write(STDOUT_FILENO, buffer, len);
+      /* FIRST TAB → bell */
+      if (!last_was_tab) {
+        write(STDOUT_FILENO, "\x07", 1);
+        last_was_tab = true;
         continue;
       }
 
-      if (match_count > 1) {
-        if (!last_was_tab) {
-          write(STDOUT_FILENO, "\x07", 1);
-          last_was_tab = true;
-          continue;
-        }
-        last_was_tab = false;
+      /* SECOND TAB → print matches */
+      last_was_tab = false;
 
-        qsort(matches, path_match_count, sizeof(matches[0]), (int (*)(const void*, const void*))strcmp);
-        write(STDOUT_FILENO, "\n", 1);
+      qsort(matches, path_match_count,
+        sizeof(matches[0]), cmp_strings);
 
-        // print builtins
-        for (int b = 0; builtin[b]; b++) {
-          if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-            write(STDOUT_FILENO, builtin[b], strlen(builtin[b]));
-            write(STDOUT_FILENO, "  ", 2);
-          }
-        }
+      write(STDOUT_FILENO, "\n", 1);
 
-        // print PATH matches only if no builtin matched
-        if (!builtin_matched) {
-          for (int j = 0; j < path_match_count; j++) {
-            write(STDOUT_FILENO, matches[j], strlen(matches[j]));
-            if (j < path_match_count - 1) {
-              write(STDOUT_FILENO, "  ", 2);
-            }
-          }
-        }
+      for (int j = 0; j < path_match_count; j++) {
+        write(STDOUT_FILENO, matches[j], strlen(matches[j]));
+        if (j < path_match_count - 1)
+          write(STDOUT_FILENO, "  ", 2);
       }
 
-      write(STDOUT_FILENO, "\r\033[K$ ", 6);
-      write(STDOUT_FILENO, buffer, len);
+      write(STDOUT_FILENO, "\n", 1);
 
+      write(STDOUT_FILENO, "$ ", 2);
+      write(STDOUT_FILENO, buffer, len);
       continue;
     }
+
 
     if (c == 127) {
       if (len > 0) {
