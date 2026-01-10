@@ -251,6 +251,23 @@ void handle_sigint(int sig) {
 }
 const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
 
+int longest_common_prefix(char matches[][256], int count) {
+  if (count == 0) return 0;
+
+  int i = 0;
+  while (1) {
+    char c = matches[0][i];
+    if (c == '\0') return i;
+
+    for (int j = 1; j < count; j++) {
+      if (matches[j][i] != c)
+        return i;
+    }
+    i++;
+  }
+}
+
+
 void handle_command(char* buffer) {
   char* argvv[20];
   char input_copy[100];
@@ -481,8 +498,19 @@ int main(int argc, char* argv[])
         last_was_tab = false;
         continue;
       }
+      int lcp_len = longest_common_prefix(matches, path_count);
 
-      if (builtin_count == 0 && path_count == 1) {
+      if (lcp_len > prefix_len) {
+        write(STDOUT_FILENO, "\r\033[K$ ", 6);
+        memcpy(buffer + start, matches[0], lcp_len);
+        len = start + lcp_len;
+        buffer[len] = '\0';
+        write(STDOUT_FILENO, buffer, len);
+        last_was_tab = false;
+        continue;
+      }
+
+      if (path_count == 1) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
         int mlen = strlen(matches[0]);
         memcpy(buffer + start, matches[0], mlen);
@@ -491,12 +519,6 @@ int main(int argc, char* argv[])
         buffer[len] = '\0';
         write(STDOUT_FILENO, buffer, len);
         last_was_tab = false;
-        continue;
-      }
-
-      if (builtin_count == 0 && path_count == 0) {
-        write(STDOUT_FILENO, "\x07", 1);
-        last_was_tab = true;
         continue;
       }
 
