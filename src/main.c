@@ -443,15 +443,15 @@ int main(int argc, char* argv[])
       }
       break;
     }
-    if (c != '\t') {
-      last_was_tab = false;
-    }
     if (n == 0) {
       if (len == 0) {
         write(STDOUT_FILENO, "\n", 1);
         break;
       }
       continue;
+    }
+    if (c != '\t') {
+      last_was_tab = false;
     }
 
 
