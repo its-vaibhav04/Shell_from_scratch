@@ -552,6 +552,10 @@ int main(int argc, char* argv[])
         memcpy(buffer + start, all_matches[0], lcp_len);
         len = start + lcp_len;
         buffer[len] = '\0';
+        if (total == 1 && lcp_len == strlen(all_matches[0])) {
+          buffer[len++] = ' ';
+          buffer[len] = '\0';
+        }
         write(STDOUT_FILENO, buffer, len);
         last_was_tab = false;
         continue;
