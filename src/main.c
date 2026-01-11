@@ -486,21 +486,21 @@ int main(int argc, char* argv[])
       }
 
       if (match_count == 0) {
-        int path_count = collect_path_matches(buffer + start, matches, 128);
+        char temp[128][256];
+        int temp_count = collect_path_matches(buffer + start, temp, 128);
 
-        if (path_count > 0) {
-          qsort(matches, path_count, sizeof(matches[0]), cmp_strings);
+        if (temp_count > 0) {
+          qsort(temp, temp_count, sizeof(temp[0]), cmp_strings);
 
+          strcpy(matches[0], temp[0]);
           match_count = 1;
-          for (int j = 1; j < path_count; j++) {
-            if (strcmp(matches[j], matches[match_count - 1]) != 0) {
-              strcpy(matches[match_count], matches[j]);
+
+          for (int j = 1; j < temp_count; j++) {
+            if (strcmp(temp[j], matches[match_count - 1]) != 0) {
+              strcpy(matches[match_count], temp[j]);
               match_count++;
             }
           }
-        }
-        else {
-          match_count = 0;
         }
       }
 
@@ -513,7 +513,10 @@ int main(int argc, char* argv[])
       int lcp_len = strlen(matches[0]);
       for (int j = 1; j < match_count; j++) {
         int k = 0;
-        while (k < lcp_len && matches[0][k] && matches[j][k] && matches[0][k] == matches[j][k]) {
+        while (k < lcp_len &&
+          matches[0][k] &&
+          matches[j][k] &&
+          matches[0][k] == matches[j][k]) {
           k++;
         }
         lcp_len = k;
