@@ -494,12 +494,13 @@ int main(int argc, char* argv[])
           match_count = 1;
           for (int j = 1; j < path_count; j++) {
             if (strcmp(matches[j], matches[match_count - 1]) != 0) {
-              if (j != match_count) {
-                strcpy(matches[match_count], matches[j]);
-              }
+              strcpy(matches[match_count], matches[j]);
               match_count++;
             }
           }
+        }
+        else {
+          match_count = 0;
         }
       }
 
@@ -509,20 +510,14 @@ int main(int argc, char* argv[])
         continue;
       }
 
-      if (builtin[0] && match_count > 0) {
-        bool has_builtins = false;
-        for (int b = 0; builtin[b]; b++) {
-          if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-            has_builtins = true;
-            break;
-          }
+      int lcp_len = strlen(matches[0]);
+      for (int j = 1; j < match_count; j++) {
+        int k = 0;
+        while (k < lcp_len && matches[0][k] && matches[j][k] && matches[0][k] == matches[j][k]) {
+          k++;
         }
-        if (has_builtins) {
-          qsort(matches, match_count, sizeof(matches[0]), cmp_strings);
-        }
+        lcp_len = k;
       }
-
-      int lcp_len = longest_common_prefix(matches, match_count);
 
       if (lcp_len > prefix_len) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
