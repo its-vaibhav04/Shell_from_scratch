@@ -474,49 +474,74 @@ int main(int argc, char* argv[])
       int start = i + 1;
       int prefix_len = len - start;
 
-      char matches[128][256];
-      int match_count = 0;
+      char prefix[256];
+      strncpy(prefix, buffer + start, prefix_len);
+      prefix[prefix_len] = '\0';
+
+      char all_matches[256][256];
+      int total = 0;
 
       for (int b = 0; builtin[b]; b++) {
-        if (strncmp(builtin[b], buffer + start, prefix_len) == 0) {
-          strncpy(matches[match_count], builtin[b], 255);
-          matches[match_count][255] = '\0';
-          match_count++;
+        if (strncmp(builtin[b], prefix, prefix_len) == 0) {
+          strcpy(all_matches[total++], builtin[b]);
         }
       }
 
-      if (match_count == 0) {
-        char temp[128][256];
-        int temp_count = collect_path_matches(buffer + start, temp, 128);
+      if (total == 0) {
+        char* path_env = getenv("PATH");
+        if (path_env) {
+          char* path_copy = strdup(path_env);
+          char* dir = strtok(path_copy, ":");
 
-        if (temp_count > 0) {
-          qsort(temp, temp_count, sizeof(temp[0]), cmp_strings);
+          while (dir && total < 256) {
+            DIR* dp = opendir(dir);
+            if (dp) {
+              struct dirent* entry;
+              while ((entry = readdir(dp)) && total < 256) {
+                if (strncmp(entry->d_name, prefix, prefix_len) == 0) {
+                  char full_path[1024];
+                  snprintf(full_path, sizeof(full_path), "%s/%s", dir, entry->d_name);
 
-          strcpy(matches[0], temp[0]);
-          match_count = 1;
-
-          for (int j = 1; j < temp_count; j++) {
-            if (strcmp(temp[j], matches[match_count - 1]) != 0) {
-              strcpy(matches[match_count], temp[j]);
-              match_count++;
+                  if (access(full_path, X_OK) == 0) {
+                    struct stat st;
+                    if (stat(full_path, &st) == 0 && S_ISREG(st.st_mode)) {
+                      int is_dup = 0;
+                      for (int k = 0; k < total; k++) {
+                        if (strcmp(all_matches[k], entry->d_name) == 0) {
+                          is_dup = 1;
+                          break;
+                        }
+                      }
+                      if (!is_dup) {
+                        strcpy(all_matches[total++], entry->d_name);
+                      }
+                    }
+                  }
+                }
+              }
+              closedir(dp);
             }
+            dir = strtok(NULL, ":");
           }
+          free(path_copy);
         }
       }
 
-      if (match_count == 0) {
+      if (total == 0) {
         write(STDOUT_FILENO, "\x07", 1);
         last_was_tab = false;
         continue;
       }
 
-      int lcp_len = strlen(matches[0]);
-      for (int j = 1; j < match_count; j++) {
+      qsort(all_matches, total, sizeof(all_matches[0]), cmp_strings);
+
+      int lcp_len = strlen(all_matches[0]);
+      for (int j = 1; j < total; j++) {
         int k = 0;
         while (k < lcp_len &&
-          matches[0][k] &&
-          matches[j][k] &&
-          matches[0][k] == matches[j][k]) {
+          all_matches[0][k] &&
+          all_matches[j][k] &&
+          all_matches[0][k] == all_matches[j][k]) {
           k++;
         }
         lcp_len = k;
@@ -524,7 +549,7 @@ int main(int argc, char* argv[])
 
       if (lcp_len > prefix_len) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
-        memcpy(buffer + start, matches[0], lcp_len);
+        memcpy(buffer + start, all_matches[0], lcp_len);
         len = start + lcp_len;
         buffer[len] = '\0';
         write(STDOUT_FILENO, buffer, len);
@@ -532,10 +557,10 @@ int main(int argc, char* argv[])
         continue;
       }
 
-      if (match_count == 1) {
+      if (total == 1) {
         write(STDOUT_FILENO, "\r\033[K$ ", 6);
-        int mlen = strlen(matches[0]);
-        memcpy(buffer + start, matches[0], mlen);
+        int mlen = strlen(all_matches[0]);
+        memcpy(buffer + start, all_matches[0], mlen);
         buffer[start + mlen] = ' ';
         len = start + mlen + 1;
         buffer[len] = '\0';
@@ -551,19 +576,16 @@ int main(int argc, char* argv[])
       }
 
       last_was_tab = false;
-
       write(STDOUT_FILENO, "\n", 1);
-      for (int j = 0; j < match_count; j++) {
-        write(STDOUT_FILENO, matches[j], strlen(matches[j]));
-        if (j < match_count - 1)
+      for (int j = 0; j < total; j++) {
+        write(STDOUT_FILENO, all_matches[j], strlen(all_matches[j]));
+        if (j < total - 1)
           write(STDOUT_FILENO, "  ", 2);
       }
-
       write(STDOUT_FILENO, "\n$ ", 3);
       write(STDOUT_FILENO, buffer, len);
       continue;
     }
-
 
     if (c == 127) {
       if (len > 0) {
