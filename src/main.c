@@ -203,70 +203,11 @@ void parse_redirection(char* argv[], char** out_stdout, char** out_stderr, bool*
   }
 }
 
-int collect_path_matches(const char* prefix,
-  char matches[][256],
-  int max_matches)
-{
-  int count = 0;
-  int prefix_len = strlen(prefix);
-
-  char* path_env = getenv("PATH");
-  if (!path_env)
-    return 0;
-
-  char* path_copy = strdup(path_env);
-  if (!path_copy)
-    return 0;
-
-  char* dir = strtok(path_copy, ":");
-  while (dir && count < max_matches) {
-    DIR* dp = opendir(dir);
-    if (dp) {
-      struct dirent* entry;
-      while ((entry = readdir(dp)) && count < max_matches) {
-        if (strncmp(entry->d_name, prefix, prefix_len) == 0) {
-
-          char full[1024];
-          snprintf(full, sizeof(full), "%s/%s", dir, entry->d_name);
-
-          if (access(full, X_OK) == 0) {
-            strncpy(matches[count], entry->d_name, 255);
-            matches[count][255] = '\0';
-            count++;
-          }
-        }
-      }
-      closedir(dp);
-    }
-    dir = strtok(NULL, ":");
-  }
-
-  free(path_copy);
-  return count;
-}
-
 void handle_sigint(int sig) {
   (void)sig;
   write(STDOUT_FILENO, "\n$ ", 3);
 }
 const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
-
-int longest_common_prefix(char matches[][256], int count) {
-  if (count == 0) return 0;
-
-  int i = 0;
-  while (1) {
-    char c = matches[0][i];
-    if (c == '\0') return i;
-
-    for (int j = 1; j < count; j++) {
-      if (matches[j][i] != c)
-        return i;
-    }
-    i++;
-  }
-}
-
 
 void handle_command(char* buffer) {
   char* argvv[20];
@@ -418,6 +359,105 @@ cleanup_and_exit:
   return;
 }
 
+void execute_pipeline(char* input) {
+  char* pipe_pos = strchr(input, '|');
+  if (!pipe_pos) return;
+
+  *pipe_pos = '\0';
+  char* left_cmd = input;
+  char* right_cmd = pipe_pos + 1;
+
+  while (*left_cmd == ' ') left_cmd++;
+  while (*right_cmd == ' ') right_cmd++;
+
+  char left_copy[1024];
+  char right_copy[1024];
+  strncpy(left_copy, left_cmd, sizeof(left_copy) - 1);
+  strncpy(right_copy, right_cmd, sizeof(right_copy) - 1);
+  left_copy[sizeof(left_copy) - 1] = '\0';
+  right_copy[sizeof(right_copy) - 1] = '\0';
+
+  char* left_argv[32];
+  char* right_argv[32];
+  int left_argc = tokenize(left_copy, left_argv, 32);
+  int right_argc = tokenize(right_copy, right_argv, 32);
+
+  if (left_argc == 0 || right_argc == 0) {
+    fprintf(stderr, "Invalid pipeline\n");
+    return;
+  }
+
+  char* left_exec = find_executable(left_argv[0]);
+  char* right_exec = find_executable(right_argv[0]);
+
+  if (!left_exec || !right_exec) {
+    if (!left_exec)
+      fprintf(stderr, "%s: command not found\n", left_argv[0]);
+    if (!right_exec)
+      fprintf(stderr, "%s: command not found\n", right_argv[0]);
+    free(left_exec);
+    free(right_exec);
+    return;
+  }
+
+  int pipefd[2];
+  if (pipe(pipefd) < 0) {
+    perror("pipe");
+    free(left_exec);
+    free(right_exec);
+    return;
+  }
+
+  pid_t p1 = fork();
+  if (p1 < 0) {
+    perror("fork");
+    close(pipefd[0]);
+    close(pipefd[1]);
+    free(left_exec);
+    free(right_exec);
+    return;
+  }
+
+  if (p1 == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDOUT_FILENO);
+    close(pipefd[1]);
+    execv(left_exec, left_argv);
+    perror("execv");
+    exit(1);
+  }
+
+  pid_t p2 = fork();
+  if (p2 < 0) {
+    perror("fork");
+    close(pipefd[0]);
+    close(pipefd[1]);
+    kill(p1, SIGTERM);
+    waitpid(p1, NULL, 0);
+    free(left_exec);
+    free(right_exec);
+    return;
+  }
+
+  if (p2 == 0) {
+    close(pipefd[1]);
+    dup2(pipefd[0], STDIN_FILENO);
+    close(pipefd[0]);
+    execv(right_exec, right_argv);
+    perror("execv");
+    exit(1);
+  }
+
+  close(pipefd[0]);
+  close(pipefd[1]);
+
+  waitpid(p1, NULL, 0);
+  waitpid(p2, NULL, 0);
+
+  free(left_exec);
+  free(right_exec);
+}
+
 int main(int argc, char* argv[])
 {
   // Flush after every printf
@@ -459,7 +499,12 @@ int main(int argc, char* argv[])
       buffer[len] = '\0';
       write(STDOUT_FILENO, "\n", 1);
       if (len > 0) {
-        handle_command(buffer);
+        if (strchr(buffer, '|')) {
+          execute_pipeline(buffer);
+        }
+        else {
+          handle_command(buffer);
+        }
       }
       len = 0;
       write(STDOUT_FILENO, "$ ", 2);
@@ -604,165 +649,6 @@ int main(int argc, char* argv[])
 
     buffer[len++] = c;
     write(STDOUT_FILENO, &c, 1);
-    // printf("$ ");
-
-    // fgets(where to store the input, maximum capacity of input, from where the input is taken)
-    // Can do scanf() as well
-    // if (!fgets(input, sizeof(input), stdin))
-    // goto cleanup_and_exit;
-
-    // strcspn(x,y) -> Read string x until any character from y matches (return the index of match)
-    // command[index] = '\0' -> Replacing next line char with null terminator
-    // input[strcspn(input, "\n")] = '\0';
-
-  //   char* argvv[20];
-  //   char input_copy[100];
-
-  //   strcpy(input_copy, input);
-  //   int argc = tokenize(input_copy, argvv, 20);
-
-  //   if (argc == 0)
-  //     continue;
-
-  //   char* out_stdout, * out_stderr;
-  //   bool stdout_append, stderr_append;
-  //   parse_redirection(argvv, &out_stdout, &out_stderr, &stdout_append, &stderr_append);
-
-  //   int saved_stdout = -1, saved_stderr = -1;
-
-  //   if (out_stdout) {
-  //     int flags = O_WRONLY | O_CREAT |
-  //       (stdout_append ? O_APPEND : O_TRUNC);
-  //     saved_stdout = dup(1);
-  //     int fd = open(out_stdout, flags, 0644);
-  //     dup2(fd, 1);
-  //     close(fd);
-  //   }
-
-  //   if (out_stderr) {
-  //     int flags = O_WRONLY | O_CREAT |
-  //       (stderr_append ? O_APPEND : O_TRUNC);
-  //     saved_stderr = dup(2);
-  //     int fd = open(out_stderr, flags, 0644);
-  //     dup2(fd, 2);
-  //     close(fd);
-  //   }
-
-  //   // EXIT COMMAND
-  //   if (argc == 1 && strcmp(argvv[0], "exit") == 0)
-  //     goto cleanup_and_exit;
-
-  //   // ECHO COMMAND
-  //   if (strcmp(argvv[0], "echo") == 0)
-  //   {
-  //     for (int i = 1; argvv[i]; i++)
-  //     {
-  //       printf("%s", argvv[i]);
-  //       if (argvv[i + 1])
-  //         printf(" ");
-  //     }
-  //     printf("\n");
-  //   }
-  //   else if (argc >= 2 && strcmp(argvv[0], "type") == 0)
-  //   { // TYPE COMMAND
-  //     const char* cmd = argvv[1];
-  //     int found = 0;
-  //     int builtin_count = sizeof(builtin) / sizeof(builtin[0]);
-
-  //     for (int i = 0; i < builtin_count; i++)
-  //     { // Checks command for each builtin
-  //       if (strcmp(builtin[i], cmd) == 0)
-  //       {
-  //         found = 1;
-  //         break;
-  //       }
-  //     }
-  //     if (found)
-  //     {
-  //       printf("%s is a shell builtin\n", cmd);
-  //     }
-  //     else
-  //     {
-  //       char* exe_path = find_executable(cmd);
-  //       if (exe_path)
-  //       {
-  //         printf("%s is %s\n", cmd, exe_path);
-  //         free(exe_path);
-  //       }
-  //       else
-  //       {
-  //         printf("%s: not found\n", cmd);
-  //       }
-  //     }
-  //   }
-  //   else if (strcmp(argvv[0], "pwd") == 0)
-  //   {
-  //     char cwd[1024];
-  //     if (getcwd(cwd, sizeof(cwd)) != NULL)
-  //     {
-  //       printf("%s\n", cwd);
-  //     }
-  //   }
-  //   else if (strcmp(argvv[0], "cd") == 0)
-  //   {
-  //     const char* path = NULL;
-
-  //     if (argc == 1)
-  //     {
-  //       path = getenv("HOME");
-  //       if (!path)
-  //       {
-  //         fprintf(stderr, "cd: HOME not set\n");
-  //         goto cleanup;
-  //       }
-  //     }
-  //     else if (argc == 2 && strcmp(argvv[1], "~") == 0)
-  //     {
-  //       path = getenv("HOME");
-  //       if (!path)
-  //       {
-  //         fprintf(stderr, "cd: HOME not set\n");
-  //         goto cleanup;
-  //       }
-  //     }
-  //     else if (argc == 2)
-  //       path = argvv[1];
-  //     else
-  //     {
-  //       fprintf(stderr, "cd: too many arguments\n");
-  //       goto cleanup;
-  //     }
-
-  //     if (chdir(path) != 0)
-  //       fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
-  //   }
-  //   else
-  //     execute_external(argvv);
-
-  // cleanup:
-  //   if (out_stdout) {
-  //     dup2(saved_stdout, 1);
-  //     close(saved_stdout);
-  //   }
-
-  //   if (out_stderr) {
-  //     dup2(saved_stderr, 2);
-  //     close(saved_stderr);
-  //   }
-  //   continue;
-
-  // cleanup_and_exit:
-  //   if (out_stdout) {
-  //     dup2(saved_stdout, 1);
-  //     close(saved_stdout);
-  //   }
-
-  //   if (out_stderr) {
-  //     dup2(saved_stderr, 2);
-  //     close(saved_stderr);
-  //   }
-  //   break;
-
   }
   return 0;
 }
