@@ -359,6 +359,83 @@ cleanup_and_exit:
   return;
 }
 
+int is_builtin(const char* cmd) {
+  for (int i = 0; builtin[i]; i++) {
+    if (strcmp(builtin[i], cmd) == 0)
+      return 1;
+  }
+  return 0;
+}
+
+void execute_builtin_in_pipeline(char** argv, int argc, int in_fd, int out_fd) {
+  int saved_stdin = -1, saved_stdout = -1;
+
+  if (in_fd != STDIN_FILENO) {
+    saved_stdin = dup(STDIN_FILENO);
+    dup2(in_fd, STDIN_FILENO);
+  }
+
+  if (out_fd != STDOUT_FILENO) {
+    saved_stdout = dup(STDOUT_FILENO);
+    dup2(out_fd, STDOUT_FILENO);
+  }
+
+  if (strcmp(argv[0], "echo") == 0) {
+    for (int i = 1; i < argc && argv[i]; i++) {
+      printf("%s", argv[i]);
+      if (argv[i + 1])
+        printf(" ");
+    }
+    printf("\n");
+  }
+  else if (strcmp(argv[0], "type") == 0 && argc >= 2) {
+    const char* cmd = argv[1];
+    int found = 0;
+    for (int i = 0; builtin[i]; i++) {
+      if (strcmp(builtin[i], cmd) == 0) {
+        found = 1;
+        break;
+      }
+    }
+    if (found) {
+      printf("%s is a shell builtin\n", cmd);
+    }
+    else {
+      char* exe_path = find_executable(cmd);
+      if (exe_path) {
+        printf("%s is %s\n", cmd, exe_path);
+        free(exe_path);
+      }
+      else {
+        printf("%s: not found\n", cmd);
+      }
+    }
+  }
+  else if (strcmp(argv[0], "pwd") == 0) {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+      printf("%s\n", cwd);
+    }
+  }
+  else if (strcmp(argv[0], "cd") == 0) {
+    const char* path = argc > 1 ? argv[1] : getenv("HOME");
+    if (path && chdir(path) != 0) {
+      fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
+    }
+  }
+
+  fflush(stdout);
+
+  if (saved_stdin != -1) {
+    dup2(saved_stdin, STDIN_FILENO);
+    close(saved_stdin);
+  }
+  if (saved_stdout != -1) {
+    dup2(saved_stdout, STDOUT_FILENO);
+    close(saved_stdout);
+  }
+}
+
 void execute_pipeline(char* input) {
   char* pipe_pos = strchr(input, '|');
   if (!pipe_pos) return;
@@ -370,15 +447,13 @@ void execute_pipeline(char* input) {
   while (*left_cmd == ' ') left_cmd++;
   while (*right_cmd == ' ') right_cmd++;
 
-  char left_copy[1024];
-  char right_copy[1024];
+  char left_copy[1024], right_copy[1024];
   strncpy(left_copy, left_cmd, sizeof(left_copy) - 1);
   strncpy(right_copy, right_cmd, sizeof(right_copy) - 1);
   left_copy[sizeof(left_copy) - 1] = '\0';
   right_copy[sizeof(right_copy) - 1] = '\0';
 
-  char* left_argv[32];
-  char* right_argv[32];
+  char* left_argv[32], * right_argv[32];
   int left_argc = tokenize(left_copy, left_argv, 32);
   int right_argc = tokenize(right_copy, right_argv, 32);
 
@@ -387,75 +462,65 @@ void execute_pipeline(char* input) {
     return;
   }
 
-  char* left_exec = find_executable(left_argv[0]);
-  char* right_exec = find_executable(right_argv[0]);
-
-  if (!left_exec || !right_exec) {
-    if (!left_exec)
-      fprintf(stderr, "%s: command not found\n", left_argv[0]);
-    if (!right_exec)
-      fprintf(stderr, "%s: command not found\n", right_argv[0]);
-    free(left_exec);
-    free(right_exec);
-    return;
-  }
+  int left_is_builtin = is_builtin(left_argv[0]);
+  int right_is_builtin = is_builtin(right_argv[0]);
 
   int pipefd[2];
   if (pipe(pipefd) < 0) {
     perror("pipe");
-    free(left_exec);
-    free(right_exec);
     return;
   }
 
-  pid_t p1 = fork();
-  if (p1 < 0) {
-    perror("fork");
-    close(pipefd[0]);
+  pid_t left_pid = -1, right_pid = -1;
+
+  if (left_is_builtin) {
+    execute_builtin_in_pipeline(left_argv, left_argc, STDIN_FILENO, pipefd[1]);
     close(pipefd[1]);
-    free(left_exec);
-    free(right_exec);
-    return;
+  }
+  else {
+    left_pid = fork();
+    if (left_pid == 0) {
+      close(pipefd[0]);
+      dup2(pipefd[1], STDOUT_FILENO);
+      close(pipefd[1]);
+
+      char* exec = find_executable(left_argv[0]);
+      if (!exec) {
+        fprintf(stderr, "%s: command not found\n", left_argv[0]);
+        exit(1);
+      }
+      execv(exec, left_argv);
+      perror("execv");
+      exit(1);
+    }
+    close(pipefd[1]);
   }
 
-  if (p1 == 0) {
+  if (right_is_builtin) {
+    execute_builtin_in_pipeline(right_argv, right_argc, pipefd[0], STDOUT_FILENO);
     close(pipefd[0]);
-    dup2(pipefd[1], STDOUT_FILENO);
-    close(pipefd[1]);
-    execv(left_exec, left_argv);
-    perror("execv");
-    exit(1);
+  }
+  else {
+    right_pid = fork();
+    if (right_pid == 0) {
+      close(pipefd[1]);
+      dup2(pipefd[0], STDIN_FILENO);
+      close(pipefd[0]);
+
+      char* exec = find_executable(right_argv[0]);
+      if (!exec) {
+        fprintf(stderr, "%s: command not found\n", right_argv[0]);
+        exit(1);
+      }
+      execv(exec, right_argv);
+      perror("execv");
+      exit(1);
+    }
+    close(pipefd[0]);
   }
 
-  pid_t p2 = fork();
-  if (p2 < 0) {
-    perror("fork");
-    close(pipefd[0]);
-    close(pipefd[1]);
-    kill(p1, SIGTERM);
-    waitpid(p1, NULL, 0);
-    free(left_exec);
-    free(right_exec);
-    return;
-  }
-
-  if (p2 == 0) {
-    close(pipefd[1]);
-    dup2(pipefd[0], STDIN_FILENO);
-    close(pipefd[0]);
-    execv(right_exec, right_argv);
-    perror("execv");
-    exit(1);
-  }
-
-  close(pipefd[0]);
-  close(pipefd[1]);
-
-  waitpid(p1, NULL, 0);
-  waitpid(p2, NULL, 0);
-
-  free(left_exec);
-  free(right_exec);
+  if (left_pid > 0) waitpid(left_pid, NULL, 0);
+  if (right_pid > 0) waitpid(right_pid, NULL, 0);
 }
 
 int main(int argc, char* argv[])
