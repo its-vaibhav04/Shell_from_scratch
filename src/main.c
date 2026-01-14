@@ -207,7 +207,9 @@ void handle_sigint(int sig) {
   (void)sig;
   write(STDOUT_FILENO, "\n$ ", 3);
 }
-const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
+const char* builtin[] = { "echo", "exit", "type", "pwd", "cd", "history", NULL };
+char history_commands[50][1024];
+int history_count = 0;
 
 void handle_command(char* buffer) {
   char* argvv[20];
@@ -331,6 +333,13 @@ void handle_command(char* buffer) {
     if (chdir(path) != 0)
       fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
   }
+  else if (strcmp(argvv[0], "history") == 0)
+  {
+    for (int i = 0; i < history_count; i++)
+    {
+      printf("%5d  %s\n", i + 1, history_commands[i]);
+    }
+  }
   else
     execute_external(argvv);
 
@@ -421,6 +430,11 @@ void execute_builtin_in_pipeline(char** argv, int argc, int in_fd, int out_fd) {
     const char* path = argc > 1 ? argv[1] : getenv("HOME");
     if (path && chdir(path) != 0) {
       fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
+    }
+  }
+  else if (strcmp(argv[0], "history") == 0) {
+    for (int i = 0; i < history_count; i++) {
+      printf("%5d  %s\n", i + 1, history_commands[i]);
     }
   }
 
@@ -611,6 +625,19 @@ int main(int argc, char* argv[])
       buffer[len] = '\0';
       write(STDOUT_FILENO, "\n", 1);
       if (len > 0) {
+        if (history_count < 50) {
+          strncpy(history_commands[history_count], buffer, sizeof(history_commands[0]) - 1);
+          history_commands[history_count][sizeof(history_commands[0]) - 1] = '\0';
+          history_count++;
+        }
+        else {
+          for (int i = 0; i < 49; i++) {
+            strcpy(history_commands[i], history_commands[i + 1]);
+          }
+          strncpy(history_commands[49], buffer, sizeof(history_commands[0]) - 1);
+          history_commands[49][sizeof(history_commands[0]) - 1] = '\0';
+        }
+
         if (strchr(buffer, '|')) {
           execute_pipeline(buffer);
         }
