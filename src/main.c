@@ -265,7 +265,7 @@ void handle_command(char* buffer) {
     const char* cmd = argvv[1];
     int found = 0;
 
-    for (int i = 0; i < builtin[i] != NULL; i++)
+    for (int i = 0;builtin[i] != NULL; i++)
     { // Checks command for each builtin
       if (strcmp(builtin[i], cmd) == 0)
       {
@@ -616,6 +616,8 @@ int main(int argc, char* argv[])
   char buffer[1024];
   int len = 0;
   bool last_was_tab = false;
+  int history_index = -1;
+  char current_input[1024] = { 0 };
   write(STDOUT_FILENO, "$ ", 2);
   while (1)
   {
@@ -639,10 +641,57 @@ int main(int argc, char* argv[])
       last_was_tab = false;
     }
 
+    if (c == 27) {
+      char seq[2];
+      if (read(STDIN_FILENO, &seq[0], 1) != 1) continue;
+      if (read(STDIN_FILENO, &seq[1], 1) != 1) continue;
+
+      if (seq[0] == '[') {
+        if (seq[1] == 'A') {
+          if (history_count == 0) continue;
+          if (history_index == -1) {
+            strncpy(current_input, buffer, len);
+            current_input[len] = '\0';
+          }
+
+          if (history_index == -1) {
+            history_index = history_count - 1;
+          }
+          else if (history_index > 0) {
+            history_index--;
+          }
+
+          write(STDOUT_FILENO, "\r\033[K$ ", 6);
+          strcpy(buffer, history_commands[history_index]);
+          len = strlen(buffer);
+          write(STDOUT_FILENO, buffer, len);
+          continue;
+        }
+        else if (seq[1] == 'B') {
+          if (history_index == -1) continue;
+          history_index++;
+
+          if (history_index >= history_count) {
+            history_index = -1;
+            strcpy(buffer, current_input);
+            len = strlen(buffer);
+          }
+          else {
+            strcpy(buffer, history_commands[history_index]);
+            len = strlen(buffer);
+          }
+
+          write(STDOUT_FILENO, "\r\033[K$ ", 6);
+          write(STDOUT_FILENO, buffer, len);
+          continue;
+        }
+      }
+    }
 
     if (c == '\n') {
       buffer[len] = '\0';
       write(STDOUT_FILENO, "\n", 1);
+      history_index = -1;
       if (len > 0) {
         if (history_count < 50) {
           strncpy(history_commands[history_count], buffer, sizeof(history_commands[0]) - 1);
@@ -798,6 +847,8 @@ int main(int argc, char* argv[])
       if (len > 0) {
         len--;
         buffer[len] = '\0';
+        history_index = -1;
+
 
         // Move cursor back, erase char, move back again
         write(STDOUT_FILENO, "\b \b", 3);
@@ -807,6 +858,7 @@ int main(int argc, char* argv[])
 
     buffer[len++] = c;
     write(STDOUT_FILENO, &c, 1);
+    history_index = -1;
   }
   return 0;
 }
