@@ -332,13 +332,22 @@ void handle_command(char* buffer) {
     if (chdir(path) != 0)
       fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
   }
-  else if (strcmp(argvv[0], "history") == 0)
-  {
-    for (int i = 0; i < history_count; i++)
-    {
+  else if (strcmp(argvv[0], "history") == 0) {
+    int n = history_count;
+
+    if (argc == 2) {
+      n = atoi(argvv[1]);
+      if (n < 0) n = 0;
+    }
+
+    int start = history_count - n;
+    if (start < 0) start = 0;
+
+    for (int i = start; i < history_count; i++) {
       printf("%5d  %s\n", i + 1, history_commands[i]);
     }
   }
+
   else
     execute_external(argvv);
 
@@ -432,10 +441,21 @@ void execute_builtin_in_pipeline(char** argv, int argc, int in_fd, int out_fd) {
     }
   }
   else if (strcmp(argv[0], "history") == 0) {
-    for (int i = 0; i < history_count; i++) {
+    int n = history_count;
+
+    if (argc == 2) {
+      n = atoi(argv[1]);
+      if (n < 0) n = 0;
+    }
+
+    int start = history_count - n;
+    if (start < 0) start = 0;
+
+    for (int i = start; i < history_count; i++) {
       printf("%5d  %s\n", i + 1, history_commands[i]);
     }
   }
+
 
   fflush(stdout);
 
