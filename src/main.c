@@ -264,9 +264,8 @@ void handle_command(char* buffer) {
   { // TYPE COMMAND
     const char* cmd = argvv[1];
     int found = 0;
-    int builtin_count = sizeof(builtin) / sizeof(builtin[0]);
 
-    for (int i = 0; i < builtin_count; i++)
+    for (int i = 0; i < builtin[i] != NULL; i++)
     { // Checks command for each builtin
       if (strcmp(builtin[i], cmd) == 0)
       {
