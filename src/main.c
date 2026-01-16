@@ -363,6 +363,21 @@ void handle_command(char* buffer) {
 
       fclose(fp);
     }
+    else if (argc >= 3 && strcmp(argvv[1], "-w") == 0) {
+      const char* filepath = argvv[2];
+      FILE* fp = fopen(filepath, "w");
+
+      if (!fp) {
+        fprintf(stderr, "history: %s: %s\n", filepath, strerror(errno));
+        goto cleanup;
+      }
+
+      for (int i = 0; i < history_count; i++) {
+        fprintf(fp, "%s\n", history_commands[i]);
+      }
+
+      fclose(fp);
+    }
     else {
       int n = history_count;
 
@@ -497,6 +512,21 @@ void execute_builtin_in_pipeline(char** argv, int argc, int in_fd, int out_fd) {
           strncpy(history_commands[49], line, sizeof(history_commands[0]) - 1);
           history_commands[49][sizeof(history_commands[0]) - 1] = '\0';
         }
+      }
+
+      fclose(fp);
+    }
+    else if (argc >= 3 && strcmp(argv[1], "-w") == 0) {
+      const char* filepath = argv[2];
+      FILE* fp = fopen(filepath, "w");
+
+      if (!fp) {
+        fprintf(stderr, "history: %s: %s\n", filepath, strerror(errno));
+        return;
+      }
+
+      for (int i = 0; i < history_count; i++) {
+        fprintf(fp, "%s\n", history_commands[i]);
       }
 
       fclose(fp);
