@@ -210,6 +210,7 @@ void handle_sigint(int sig) {
 const char* builtin[] = { "echo", "exit", "type", "pwd", "cd", "history", NULL };
 char history_commands[50][1024];
 int history_count = 0;
+int last_appended_index = 0;
 
 void handle_command(char* buffer) {
   char* argvv[20];
@@ -246,8 +247,13 @@ void handle_command(char* buffer) {
   }
 
   // EXIT COMMAND
-  if (argc == 1 && strcmp(argvv[0], "exit") == 0)
+  if (argc == 1 && strcmp(argvv[0], "exit") == 0) {
+    char* histfile = getenv("HISTFILE");
+    if (histfile) {
+      save_history_on_exit(histfile);
+    }
     exit(0);
+  }
 
   // ECHO COMMAND
   if (strcmp(argvv[0], "echo") == 0)
@@ -377,6 +383,22 @@ void handle_command(char* buffer) {
       }
 
       fclose(fp);
+    }
+    else if (argc >= 3 && strcmp(argvv[1], "-a") == 0) {
+      const char* filepath = argvv[2];
+      FILE* fp = fopen(filepath, "a");
+
+      if (!fp) {
+        fprintf(stderr, "history: %s: %s\n", filepath, strerror(errno));
+        goto cleanup;
+      }
+
+      for (int i = last_appended_index; i < history_count; i++) {
+        fprintf(fp, "%s\n", history_commands[i]);
+      }
+
+      fclose(fp);
+      last_appended_index = history_count;
     }
     else {
       int n = history_count;
@@ -530,6 +552,22 @@ void execute_builtin_in_pipeline(char** argv, int argc, int in_fd, int out_fd) {
       }
 
       fclose(fp);
+    }
+    else if (argc >= 3 && strcmp(argv[1], "-a") == 0) {
+      const char* filepath = argv[2];
+      FILE* fp = fopen(filepath, "a");
+
+      if (!fp) {
+        fprintf(stderr, "history: %s: %s\n", filepath, strerror(errno));
+        return;
+      }
+
+      for (int i = last_appended_index; i < history_count; i++) {
+        fprintf(fp, "%s\n", history_commands[i]);
+      }
+
+      fclose(fp);
+      last_appended_index = history_count;
     }
     else {
       int n = history_count;
@@ -695,6 +733,61 @@ void execute_pipeline(char* input) {
   }
 }
 
+void load_history_from_file(const char* filepath) {
+  if (!filepath) return;
+
+  FILE* fp = fopen(filepath, "r");
+  if (!fp) return;
+
+  char line[1024];
+  while (fgets(line, sizeof(line), fp)) {
+    line[strcspn(line, "\n")] = '\0';
+    if (strlen(line) == 0) continue;
+
+    if (history_count < 50) {
+      strncpy(history_commands[history_count], line, sizeof(history_commands[0]) - 1);
+      history_commands[history_count][sizeof(history_commands[0]) - 1] = '\0';
+      history_count++;
+    }
+    else {
+      for (int i = 0; i < 49; i++) {
+        strcpy(history_commands[i], history_commands[i + 1]);
+      }
+      strncpy(history_commands[49], line, sizeof(history_commands[0]) - 1);
+      history_commands[49][sizeof(history_commands[0]) - 1] = '\0';
+    }
+  }
+
+  fclose(fp);
+  last_appended_index = history_count;
+}
+
+void save_history_on_exit(const char* filepath) {
+  if (!filepath) return;
+
+  // Check if file exists
+  FILE* fp_check = fopen(filepath, "r");
+  bool file_exists = (fp_check != NULL);
+  if (fp_check) fclose(fp_check);
+
+  FILE* fp;
+  if (file_exists) {
+    fp = fopen(filepath, "a");
+  }
+  else {
+    fp = fopen(filepath, "w");
+  }
+
+  if (!fp) return;
+
+  int start_index = file_exists ? last_appended_index : 0;
+  for (int i = start_index; i < history_count; i++) {
+    fprintf(fp, "%s\n", history_commands[i]);
+  }
+
+  fclose(fp);
+}
+
 int main(int argc, char* argv[])
 {
   // Flush after every printf
@@ -704,6 +797,12 @@ int main(int argc, char* argv[])
   // char input[100]; // declaring a char array to store input command of user
   // const char* builtin[] = { "echo", "exit", "type", "pwd", "cd" };
   signal(SIGINT, handle_sigint);
+
+  char* histfile = getenv("HISTFILE");
+  if (histfile) {
+    load_history_from_file(histfile);
+  }
+
   enable_raw_mode();
   char buffer[1024];
   int len = 0;
