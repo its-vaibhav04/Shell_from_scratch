@@ -333,21 +333,52 @@ void handle_command(char* buffer) {
       fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
   }
   else if (strcmp(argvv[0], "history") == 0) {
-    int n = history_count;
+    if (argc >= 3 && strcmp(argvv[1], "-r") == 0) {
+      const char* filepath = argvv[2];
+      FILE* fp = fopen(filepath, "r");
 
-    if (argc == 2) {
-      n = atoi(argvv[1]);
-      if (n < 0) n = 0;
+      if (!fp) {
+        fprintf(stderr, "history: %s: %s\n", filepath, strerror(errno));
+        goto cleanup;
+      }
+
+      char line[1024];
+      while (fgets(line, sizeof(line), fp)) {
+        line[strcspn(line, "\n")] = '\0';
+        if (strlen(line) == 0) continue;
+
+        if (history_count < 50) {
+          strncpy(history_commands[history_count], line, sizeof(history_commands[0]) - 1);
+          history_commands[history_count][sizeof(history_commands[0]) - 1] = '\0';
+          history_count++;
+        }
+        else {
+          for (int i = 0; i < 49; i++) {
+            strcpy(history_commands[i], history_commands[i + 1]);
+          }
+          strncpy(history_commands[49], line, sizeof(history_commands[0]) - 1);
+          history_commands[49][sizeof(history_commands[0]) - 1] = '\0';
+        }
+      }
+
+      fclose(fp);
     }
+    else {
+      int n = history_count;
 
-    int start = history_count - n;
-    if (start < 0) start = 0;
+      if (argc == 2) {
+        n = atoi(argvv[1]);
+        if (n < 0) n = 0;
+      }
 
-    for (int i = start; i < history_count; i++) {
-      printf("%5d  %s\n", i + 1, history_commands[i]);
+      int start = history_count - n;
+      if (start < 0) start = 0;
+
+      for (int i = start; i < history_count; i++) {
+        printf("%5d  %s\n", i + 1, history_commands[i]);
+      }
     }
   }
-
   else
     execute_external(argvv);
 
@@ -441,18 +472,49 @@ void execute_builtin_in_pipeline(char** argv, int argc, int in_fd, int out_fd) {
     }
   }
   else if (strcmp(argv[0], "history") == 0) {
-    int n = history_count;
+    if (argc >= 3 && strcmp(argv[1], "-r") == 0) {
+      const char* filepath = argv[2];
+      FILE* fp = fopen(filepath, "r");
 
-    if (argc == 2) {
-      n = atoi(argv[1]);
-      if (n < 0) n = 0;
+      if (!fp) {
+        fprintf(stderr, "history: %s: %s\n", filepath, strerror(errno));
+        return;
+      }
+
+      char line[1024];
+      while (fgets(line, sizeof(line), fp)) {
+        line[strcspn(line, "\n")] = '\0';
+        if (strlen(line) == 0) continue;
+        if (history_count < 50) {
+          strncpy(history_commands[history_count], line, sizeof(history_commands[0]) - 1);
+          history_commands[history_count][sizeof(history_commands[0]) - 1] = '\0';
+          history_count++;
+        }
+        else {
+          for (int i = 0; i < 49; i++) {
+            strcpy(history_commands[i], history_commands[i + 1]);
+          }
+          strncpy(history_commands[49], line, sizeof(history_commands[0]) - 1);
+          history_commands[49][sizeof(history_commands[0]) - 1] = '\0';
+        }
+      }
+
+      fclose(fp);
     }
+    else {
+      int n = history_count;
 
-    int start = history_count - n;
-    if (start < 0) start = 0;
+      if (argc == 2) {
+        n = atoi(argv[1]);
+        if (n < 0) n = 0;
+      }
 
-    for (int i = start; i < history_count; i++) {
-      printf("%5d  %s\n", i + 1, history_commands[i]);
+      int start = history_count - n;
+      if (start < 0) start = 0;
+
+      for (int i = start; i < history_count; i++) {
+        printf("%5d  %s\n", i + 1, history_commands[i]);
+      }
     }
   }
 
