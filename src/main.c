@@ -212,6 +212,61 @@ char history_commands[50][1024];
 int history_count = 0;
 int last_appended_index = 0;
 
+void load_history_from_file(const char* filepath) {
+  if (!filepath) return;
+
+  FILE* fp = fopen(filepath, "r");
+  if (!fp) return;
+
+  char line[1024];
+  while (fgets(line, sizeof(line), fp)) {
+    line[strcspn(line, "\n")] = '\0';
+    if (strlen(line) == 0) continue;
+
+    if (history_count < 50) {
+      strncpy(history_commands[history_count], line, sizeof(history_commands[0]) - 1);
+      history_commands[history_count][sizeof(history_commands[0]) - 1] = '\0';
+      history_count++;
+    }
+    else {
+      for (int i = 0; i < 49; i++) {
+        strcpy(history_commands[i], history_commands[i + 1]);
+      }
+      strncpy(history_commands[49], line, sizeof(history_commands[0]) - 1);
+      history_commands[49][sizeof(history_commands[0]) - 1] = '\0';
+    }
+  }
+
+  fclose(fp);
+  last_appended_index = history_count;
+}
+
+void save_history_on_exit(const char* filepath) {
+  if (!filepath) return;
+
+  FILE* fp_check = fopen(filepath, "r");
+  bool file_exists = (fp_check != NULL);
+  if (fp_check) fclose(fp_check);
+
+  FILE* fp;
+  if (file_exists) {
+    fp = fopen(filepath, "a");
+  }
+  else {
+    fp = fopen(filepath, "w");
+  }
+
+  if (!fp) return;
+
+  int start_index = file_exists ? last_appended_index : 0;
+  for (int i = start_index; i < history_count; i++) {
+    fprintf(fp, "%s\n", history_commands[i]);
+  }
+
+  fclose(fp);
+}
+
+
 void handle_command(char* buffer) {
   char* argvv[20];
   char input_copy[100];
@@ -731,61 +786,6 @@ void execute_pipeline(char* input) {
       waitpid(pids[i], NULL, 0);
     }
   }
-}
-
-void load_history_from_file(const char* filepath) {
-  if (!filepath) return;
-
-  FILE* fp = fopen(filepath, "r");
-  if (!fp) return;
-
-  char line[1024];
-  while (fgets(line, sizeof(line), fp)) {
-    line[strcspn(line, "\n")] = '\0';
-    if (strlen(line) == 0) continue;
-
-    if (history_count < 50) {
-      strncpy(history_commands[history_count], line, sizeof(history_commands[0]) - 1);
-      history_commands[history_count][sizeof(history_commands[0]) - 1] = '\0';
-      history_count++;
-    }
-    else {
-      for (int i = 0; i < 49; i++) {
-        strcpy(history_commands[i], history_commands[i + 1]);
-      }
-      strncpy(history_commands[49], line, sizeof(history_commands[0]) - 1);
-      history_commands[49][sizeof(history_commands[0]) - 1] = '\0';
-    }
-  }
-
-  fclose(fp);
-  last_appended_index = history_count;
-}
-
-void save_history_on_exit(const char* filepath) {
-  if (!filepath) return;
-
-  // Check if file exists
-  FILE* fp_check = fopen(filepath, "r");
-  bool file_exists = (fp_check != NULL);
-  if (fp_check) fclose(fp_check);
-
-  FILE* fp;
-  if (file_exists) {
-    fp = fopen(filepath, "a");
-  }
-  else {
-    fp = fopen(filepath, "w");
-  }
-
-  if (!fp) return;
-
-  int start_index = file_exists ? last_appended_index : 0;
-  for (int i = start_index; i < history_count; i++) {
-    fprintf(fp, "%s\n", history_commands[i]);
-  }
-
-  fclose(fp);
 }
 
 int main(int argc, char* argv[])
