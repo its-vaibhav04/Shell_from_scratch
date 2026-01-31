@@ -207,7 +207,7 @@ void handle_sigint(int sig) {
   (void)sig;
   write(STDOUT_FILENO, "\n$ ", 3);
 }
-const char* builtin[] = { "echo", "exit", "type", "pwd", "cd", "history", NULL };
+const char* builtin[] = { "echo", "exit", "type", "pwd", "cd", "history", "mkdir", "rmdir", "rm", "touch", "cp", "mv", NULL };
 char history_commands[50][1024];
 int history_count = 0;
 int last_appended_index = 0;
@@ -266,6 +266,73 @@ void save_history_on_exit(const char* filepath) {
   fclose(fp);
 }
 
+int mkdir_recursive(const char* path, mode_t mode) {
+  char tmp[1024];
+  char* p = NULL;
+  size_t len;
+
+  snprintf(tmp, sizeof(tmp), "%s", path);
+  len = strlen(tmp);
+  if (tmp[len - 1] == '/')
+    tmp[len - 1] = 0;
+
+  for (p = tmp + 1; *p; p++) {
+    if (*p == '/') {
+      *p = 0;
+      if (mkdir(tmp, mode) != 0 && errno != EEXIST) {
+        return -1;
+      }
+      *p = '/';
+    }
+  }
+  if (mkdir(tmp, mode) != 0 && errno != EEXIST) {
+    return -1;
+  }
+  return 0;
+}
+
+int rmdir_recursive(const char* path) {
+  DIR* d = opendir(path);
+  size_t path_len = strlen(path);
+  int r = -1;
+
+  if (d) {
+    struct dirent* p;
+    r = 0;
+
+    while (!r && (p = readdir(d))) {
+      int r2 = -1;
+      char* buf;
+      size_t len;
+
+      if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+        continue;
+
+      len = path_len + strlen(p->d_name) + 2;
+      buf = malloc(len);
+
+      if (buf) {
+        struct stat statbuf;
+        snprintf(buf, len, "%s/%s", path, p->d_name);
+
+        if (!stat(buf, &statbuf)) {
+          if (S_ISDIR(statbuf.st_mode))
+            r2 = rmdir_recursive(buf);
+          else
+            r2 = unlink(buf);
+        }
+        free(buf);
+      }
+      r = r2;
+    }
+    closedir(d);
+  }
+
+  if (!r)
+    r = rmdir(path);
+
+  return r;
+}
 
 void handle_command(char* buffer) {
   char* argvv[20];
@@ -392,6 +459,180 @@ void handle_command(char* buffer) {
 
     if (chdir(path) != 0)
       fprintf(stderr, "cd: %s: %s\n", path, strerror(errno));
+  }
+  else if (strcmp(argvv[0], "mkdir") == 0) {
+    if (argc < 2) {
+      fprintf(stderr, "mkdir: missing operand\n");
+      goto cleanup;
+    }
+
+    bool parents = false;
+    int start_idx = 1;
+
+    if (strcmp(argvv[1], "-p") == 0) {
+      parents = true;
+      start_idx = 2;
+      if (argc < 3) {
+        fprintf(stderr, "mkdir: missing operand\n");
+        goto cleanup;
+      }
+    }
+
+    for (int i = start_idx; argvv[i]; i++) {
+      int result;
+      if (parents) {
+        result = mkdir_recursive(argvv[i], 0755);
+      }
+      else {
+        result = mkdir(argvv[i], 0755);
+      }
+
+      if (result != 0) {
+        fprintf(stderr, "mkdir: cannot create directory '%s': %s\n",
+          argvv[i], strerror(errno));
+      }
+    }
+  }
+  else if (strcmp(argvv[0], "rmdir") == 0) {
+    if (argc < 2) {
+      fprintf(stderr, "rmdir: missing operand\n");
+      goto cleanup;
+    }
+
+    for (int i = 1; argvv[i]; i++) {
+      if (rmdir(argvv[i]) != 0) {
+        fprintf(stderr, "rmdir: failed to remove '%s': %s\n",
+          argvv[i], strerror(errno));
+      }
+    }
+  }
+  else if (strcmp(argvv[0], "rm") == 0) {
+    if (argc < 2) {
+      fprintf(stderr, "rm: missing operand\n");
+      goto cleanup;
+    }
+
+    bool recursive = false;
+    bool force = false;
+    int start_idx = 1;
+
+    // Parse flags
+    for (int i = 1; argvv[i]; i++) {
+      if (argvv[i][0] == '-') {
+        for (int j = 1; argvv[i][j]; j++) {
+          if (argvv[i][j] == 'r' || argvv[i][j] == 'R') {
+            recursive = true;
+          }
+          else if (argvv[i][j] == 'f') {
+            force = true;
+          }
+        }
+        start_idx = i + 1;
+      }
+      else {
+        break;
+      }
+    }
+
+    if (!argvv[start_idx]) {
+      fprintf(stderr, "rm: missing operand\n");
+      goto cleanup;
+    }
+
+    for (int i = start_idx; argvv[i]; i++) {
+      struct stat st;
+      if (stat(argvv[i], &st) == 0) {
+        if (S_ISDIR(st.st_mode)) {
+          if (recursive) {
+            if (rmdir_recursive(argvv[i]) != 0 && !force) {
+              fprintf(stderr, "rm: cannot remove '%s': %s\n",
+                argvv[i], strerror(errno));
+            }
+          }
+          else {
+            fprintf(stderr, "rm: cannot remove '%s': Is a directory\n", argvv[i]);
+          }
+        }
+        else {
+          if (unlink(argvv[i]) != 0 && !force) {
+            fprintf(stderr, "rm: cannot remove '%s': %s\n",
+              argvv[i], strerror(errno));
+          }
+        }
+      }
+      else if (!force) {
+        fprintf(stderr, "rm: cannot remove '%s': %s\n",
+          argvv[i], strerror(errno));
+      }
+    }
+  }
+
+  else if (strcmp(argvv[0], "touch") == 0) {
+    if (argc < 2) {
+      fprintf(stderr, "touch: missing operand\n");
+      goto cleanup;
+    }
+
+    for (int i = 1; argvv[i]; i++) {
+      int fd = open(argvv[i], O_WRONLY | O_CREAT, 0644);
+      if (fd < 0) {
+        fprintf(stderr, "touch: cannot touch '%s': %s\n",
+          argvv[i], strerror(errno));
+      }
+      else {
+        close(fd);
+      }
+    }
+  }
+
+  else if (strcmp(argvv[0], "cp") == 0) {
+    if (argc < 3) {
+      fprintf(stderr, "cp: missing operand\n");
+      goto cleanup;
+    }
+
+    const char* src = argvv[1];
+    const char* dst = argvv[2];
+
+    int src_fd = open(src, O_RDONLY);
+    if (src_fd < 0) {
+      fprintf(stderr, "cp: cannot open '%s': %s\n", src, strerror(errno));
+      goto cleanup;
+    }
+
+    int dst_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dst_fd < 0) {
+      fprintf(stderr, "cp: cannot create '%s': %s\n", dst, strerror(errno));
+      close(src_fd);
+      goto cleanup;
+    }
+
+    char buf[4096];
+    ssize_t n;
+    while ((n = read(src_fd, buf, sizeof(buf))) > 0) {
+      if (write(dst_fd, buf, n) != n) {
+        fprintf(stderr, "cp: write error: %s\n", strerror(errno));
+        break;
+      }
+    }
+
+    close(src_fd);
+    close(dst_fd);
+  }
+
+  else if (strcmp(argvv[0], "mv") == 0) {
+    if (argc < 3) {
+      fprintf(stderr, "mv: missing operand\n");
+      goto cleanup;
+    }
+
+    const char* src = argvv[1];
+    const char* dst = argvv[2];
+
+    if (rename(src, dst) != 0) {
+      fprintf(stderr, "mv: cannot move '%s' to '%s': %s\n",
+        src, dst, strerror(errno));
+    }
   }
   else if (strcmp(argvv[0], "history") == 0) {
     if (argc >= 3 && strcmp(argvv[1], "-r") == 0) {
