@@ -1,6 +1,6 @@
 # 🐚 Custom UNIX Shell
 
-A feature-rich, POSIX-compliant shell implementation written in C, featuring advanced command-line editing, intelligent tab completion, pipeline support, and persistent command history.
+A feature-rich, POSIX-compliant shell implementation written in C, featuring advanced command-line editing, intelligent tab completion, pipeline support, file manipulation commands, and persistent command history.
 
 ![Shell Demo](https://img.shields.io/badge/language-C-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)
@@ -9,14 +9,15 @@ A feature-rich, POSIX-compliant shell implementation written in C, featuring adv
 
 ## ✨ Features at a Glance
 
-| Feature                     | Description                                                     |
-| --------------------------- | --------------------------------------------------------------- |
-| 🎯 **Smart Tab Completion** | Intelligent auto-completion with longest common prefix matching |
-| 📜 **Persistent History**   | Command history with file persistence and navigation            |
-| 🔀 **Advanced Pipelines**   | Multi-stage pipelines with builtin support                      |
-| 📂 **I/O Redirection**      | Full support for stdin/stdout/stderr redirection                |
-| ⌨️ **Raw Mode Input**       | Character-by-character input with arrow key navigation          |
-| 🔧 **Built-in Commands**    | Essential shell builtins (cd, pwd, echo, type, history, exit)   |
+| Feature                     | Description                                                          |
+| --------------------------- | -------------------------------------------------------------------- |
+| 🎯 **Smart Tab Completion** | Intelligent auto-completion with longest common prefix matching      |
+| 📜 **Persistent History**   | Command history with file persistence and navigation                 |
+| 🔀 **Advanced Pipelines**   | Multi-stage pipelines with builtin support                           |
+| 📂 **I/O Redirection**      | Full support for stdin/stdout/stderr redirection                     |
+| ⌨️ **Raw Mode Input**       | Character-by-character input with arrow key navigation               |
+| 🔧 **Built-in Commands**    | Essential shell builtins + file operations (mkdir, rm, cp, mv, etc.) |
+| 📁 **File Management**      | Built-in file/directory manipulation without external dependencies   |
 
 ---
 
@@ -94,6 +95,117 @@ $ history -a ~/my_history.txt
 
 ```bash
 $ exit
+```
+
+---
+
+### 📁 File & Directory Management
+
+Our shell includes powerful built-in file manipulation commands:
+
+#### **`mkdir`** - Create directories
+
+```bash
+# Create a single directory
+$ mkdir mydir
+
+# Create multiple directories
+$ mkdir dir1 dir2 dir3
+
+# Create nested directories with -p flag
+$ mkdir -p parent/child/grandchild
+
+# Verify creation
+$ ls
+parent/
+```
+
+#### **`rmdir`** - Remove empty directories
+
+```bash
+# Remove an empty directory
+$ rmdir emptydir
+
+# Remove multiple empty directories
+$ rmdir dir1 dir2 dir3
+
+# Error on non-empty directory
+$ rmdir nonempty
+rmdir: failed to remove 'nonempty': Directory not empty
+```
+
+#### **`rm`** - Remove files and directories
+
+```bash
+# Remove a file
+$ rm file.txt
+
+# Remove multiple files
+$ rm file1.txt file2.txt file3.txt
+
+# Remove directory recursively
+$ rm -r directory/
+
+# Force remove (suppress errors)
+$ rm -f nonexistent.txt
+
+# Remove directory and contents forcefully
+$ rm -rf temp_folder/
+
+# Combined flags
+$ rm -rf old_project/ backup/
+```
+
+**Supported Flags:**
+| Flag | Description |
+|------|-------------|
+| `-r` or `-R` | Recursive removal (for directories) |
+| `-f` | Force removal (suppress error messages) |
+| `-rf` | Combined: force recursive removal |
+
+#### **`touch`** - Create empty files
+
+```bash
+# Create a single file
+$ touch newfile.txt
+
+# Create multiple files
+$ touch file1.txt file2.txt file3.txt
+
+# Files are created with default permissions (0644)
+$ ls -l file1.txt
+-rw-r--r-- 1 user user 0 Jan 31 12:00 file1.txt
+```
+
+#### **`cp`** - Copy files
+
+```bash
+# Copy a file
+$ cp source.txt destination.txt
+
+# Copy to a directory
+$ cp file.txt /tmp/
+
+# Verify copy
+$ ls -l source.txt destination.txt
+-rw-r--r-- 1 user user 1024 Jan 31 12:00 source.txt
+-rw-r--r-- 1 user user 1024 Jan 31 12:01 destination.txt
+```
+
+#### **`mv`** - Move/rename files
+
+```bash
+# Rename a file
+$ mv oldname.txt newname.txt
+
+# Move to a directory
+$ mv file.txt /home/user/documents/
+
+# Move and rename
+$ mv temp.txt /backup/important.txt
+
+# Move multiple files (last arg is destination)
+$ mv file1.txt file2.txt /destination/
 ```
 
 ---
@@ -326,6 +438,19 @@ $ complex_command > output.txt 2> errors.txt
 $ another_command >> output.txt 2>> errors.txt
 ```
 
+#### **Redirection with File Operations**
+
+```bash
+# Create directories and redirect output
+$ mkdir -p logs 2> errors.txt
+
+# Copy files with logging
+$ cp large_file.dat backup.dat > copy.log 2> copy_errors.log
+
+# Remove files with error logging
+$ rm -rf temp/ 2>> cleanup_errors.log
+```
+
 **Redirection Operators:**
 | Operator | Description |
 |----------|-------------|
@@ -384,6 +509,29 @@ $ pwd
 $ HISTFILE=~/.my_history ./shell
 ```
 
+### Complex Workflows
+
+```bash
+# Create project structure
+$ mkdir -p project/{src,bin,tests,docs}
+$ touch project/src/main.c project/README.md
+$ ls -R project/
+project/:
+src/  bin/  tests/  docs/  README.md
+
+project/src:
+main.c
+
+# Organize files
+$ cp *.c project/src/
+$ mv *.txt project/docs/
+$ rm -f *.tmp
+
+# Backup with logging
+$ mkdir -p backup/$(date +%Y%m%d)
+$ cp -r project/ backup/$(date +%Y%m%d)/ > backup.log 2>&1
+```
+
 ---
 
 ## 🏗️ Architecture
@@ -413,27 +561,28 @@ $ HISTFILE=~/.my_history ./shell
          ┌────▼─────┐    ┌────▼────────┐
          │ Builtin  │    │  Pipeline   │
          │ Command  │    │   Handler   │
-         └──────────┘    └─────┬───────┘
-                               │
-                    ┌──────────┴──────────┐
-                    │                     │
-               ┌────▼─────┐         ┌────▼────┐
-               │ Builtin  │         │ External│
-               │ in Pipe  │         │ Command │
-               └──────────┘         └─────────┘
+         └────┬─────┘    └─────┬───────┘
+              │                │
+       ┌──────┴──────┐  ┌──────┴─────────┐
+       │             │  │                │
+  ┌────▼────┐   ┌────▼──▼───┐      ┌────▼────┐
+  │ File    │   │ Builtin   │      │External │
+  │ Ops     │   │ in Pipe   │      │ Command │
+  └─────────┘   └───────────┘      └─────────┘
 ```
 
 ### Module Breakdown
 
-| Module                | Responsibility                         |
-| --------------------- | -------------------------------------- |
-| **Tokenizer**         | Parse command strings into argv arrays |
-| **Path Resolver**     | Locate executables in PATH directories |
-| **Tab Completion**    | Auto-complete with LCP algorithm       |
-| **History Manager**   | In-memory and file-based history       |
-| **Pipeline Executor** | Multi-stage pipe coordination          |
-| **Builtin Handler**   | Execute internal commands              |
-| **I/O Redirector**    | File descriptor manipulation           |
+| Module                | Responsibility                           |
+| --------------------- | ---------------------------------------- |
+| **Tokenizer**         | Parse command strings into argv arrays   |
+| **Path Resolver**     | Locate executables in PATH directories   |
+| **Tab Completion**    | Auto-complete with LCP algorithm         |
+| **History Manager**   | In-memory and file-based history         |
+| **Pipeline Executor** | Multi-stage pipe coordination            |
+| **Builtin Handler**   | Execute internal commands                |
+| **File Operations**   | Directory/file creation and manipulation |
+| **I/O Redirector**    | File descriptor manipulation             |
 
 ---
 
@@ -446,6 +595,7 @@ $ HISTFILE=~/.my_history ./shell
 - **Process Management**: `fork()`, `exec()`, `waitpid()`
 - **Inter-Process Communication**: `pipe()` for pipeline data flow
 - **File Descriptor Manipulation**: `dup2()` for redirection
+- **System Calls**: `mkdir()`, `rmdir()`, `unlink()`, `rename()`, `open()`, `read()`, `write()`
 
 ### Performance Characteristics
 
@@ -455,13 +605,45 @@ $ HISTFILE=~/.my_history ./shell
 | History lookup        | O(1) indexed access                     |
 | Pipeline creation     | O(k) where k = number of stages         |
 | Command execution     | O(1) for builtins, O(fork) for external |
+| File operations       | O(1) for single ops, O(n) for recursive |
+| Directory traversal   | O(n) where n = number of entries        |
 
 ### Memory Management
 
 - **History buffer**: Fixed 50 commands × 1024 bytes = ~50KB
 - **Tab completion**: ~256 matches × 256 bytes = ~64KB
 - **Input buffer**: 1024 bytes per line
-- **Total memory footprint**: ~150KB static allocation
+- **File operation buffers**: 4KB for copy operations
+- **Total memory footprint**: ~200KB static allocation
+
+### Safety Features
+
+- ✅ **Recursive directory removal**: Safely deletes nested structures
+- ✅ **Error handling**: Comprehensive errno checking
+- ✅ **Permission handling**: Proper mode bits for created files/directories
+- ✅ **Buffer overflow protection**: Fixed-size buffers with bounds checking
+- ✅ **Resource cleanup**: Proper file descriptor and memory management
+
+---
+
+## 📋 Command Reference
+
+### Complete Builtin Command List
+
+| Command   | Syntax                                 | Description              |
+| --------- | -------------------------------------- | ------------------------ |
+| `echo`    | `echo [args...]`                       | Display arguments        |
+| `cd`      | `cd [directory]`                       | Change directory         |
+| `pwd`     | `pwd`                                  | Print working directory  |
+| `type`    | `type command`                         | Show command type        |
+| `history` | `history [n]` or `history -[rwa] file` | Manage command history   |
+| `exit`    | `exit`                                 | Exit the shell           |
+| `mkdir`   | `mkdir [-p] dir...`                    | Create directories       |
+| `rmdir`   | `rmdir dir...`                         | Remove empty directories |
+| `rm`      | `rm [-rf] file...`                     | Remove files/directories |
+| `touch`   | `touch file...`                        | Create empty files       |
+| `cp`      | `cp source dest`                       | Copy files               |
+| `mv`      | `mv source dest`                       | Move/rename files        |
 
 ---
 
@@ -491,11 +673,52 @@ $ <RIGHT>   # (not implemented)
 
 ---
 
+## 🧪 Testing Examples
+
+### File Management Workflow
+
+```bash
+# Create a project structure
+$ mkdir -p myproject/{src,include,build,tests}
+$ touch myproject/src/main.c
+$ touch myproject/include/header.h
+$ touch myproject/README.md
+
+# Populate with content
+$ echo "int main() { return 0; }" > myproject/src/main.c
+
+# Copy configuration
+$ cp config.txt myproject/config.txt
+
+# Move files
+$ mv old_file.txt myproject/old_file.txt
+
+# Cleanup
+$ rm -rf myproject/build
+$ rmdir myproject/tests
+```
+
+### Pipeline + File Operations
+
+```bash
+# Create and list
+$ mkdir temp && cd temp && touch file{1..5}.txt && ls -la | grep "file"
+
+# Process and save
+$ echo "Line 1\nLine 2\nLine 3" | wc -l > count.txt
+
+# Backup with verification
+$ cp important.txt backup.txt && echo "Backup created" > backup.log
+```
+
+---
+
 ## 📚 References
 
 - [POSIX Shell Command Language](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html)
 - [Advanced Programming in the UNIX Environment](https://www.apuebook.com/)
 - [The Linux Programming Interface](https://man7.org/tlpi/)
+- [GNU Coreutils Documentation](https://www.gnu.org/software/coreutils/manual/)
 
 ---
 
@@ -506,9 +729,3 @@ $ <RIGHT>   # (not implemented)
 **GitHub**: [@its-vaibhav04](https://github.com/its-vaibhav04)
 
 ---
-
-<div align="center">
-
-**⭐ Star this repository if you found it helpful! ⭐**
-
-</div>
